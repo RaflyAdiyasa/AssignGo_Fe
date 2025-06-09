@@ -25,7 +25,7 @@ export const useApi = () => {
   const clearError = () => setError(null);
 
   return {
-    loading,
+    loading,  
     error,
     callApi,
     clearError

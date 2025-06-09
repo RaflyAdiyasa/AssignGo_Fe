@@ -1,8 +1,9 @@
-// src/pages/auth/AuthApp.js
+// src/pages/auth/AuthApp.js - Updated with improved validation and error handling
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, User, Lock, Mail, UserPlus, LogIn } from 'lucide-react';
+import { Eye, EyeOff, User, Lock, Mail, UserPlus, LogIn, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { NIM_VALIDATION } from '../../utils/constants';
 
 const AuthApp = () => {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ const AuthApp = () => {
     isAdmin: false
   });
   const [message, setMessage] = useState({ text: '', type: '' });
+  const [validationErrors, setValidationErrors] = useState({});
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -28,46 +30,129 @@ const AuthApp = () => {
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
+    const newValue = type === 'checkbox' ? checked : value;
+    
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: newValue
     }));
+
+    // Clear validation error for this field
+    if (validationErrors[name]) {
+      setValidationErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+
+    // Clear message when user starts typing
+    if (message.text) {
+      setMessage({ text: '', type: '' });
+    }
+  };
+
+  const validateForm = () => {
+    const errors = {};
+
+    // Validate NIM
+    const nimValidation = NIM_VALIDATION.validate(formData.nim);
+    if (!nimValidation.valid) {
+      errors.nim = nimValidation.message;
+    }
+
+    // Validate password
+    if (!formData.password || formData.password.trim().length === 0) {
+      errors.password = 'Password wajib diisi';
+    } else if (formData.password.length < 6) {
+      errors.password = 'Password minimal 6 karakter';
+    }
+
+    // Validate username for registration
+    if (!isLoginMode) {
+      if (!formData.username || formData.username.trim().length === 0) {
+        errors.username = 'Username wajib diisi';
+      } else if (formData.username.length < 3) {
+        errors.username = 'Username minimal 3 karakter';
+      } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
+        errors.username = 'Username hanya boleh berisi huruf, angka, dan underscore';
+      }
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage({ text: '', type: '' });
 
+    // Validate form
+    if (!validateForm()) {
+      setMessage({ 
+        text: 'Mohon perbaiki error pada form', 
+        type: 'error' 
+      });
+      return;
+    }
+
     try {
       let result;
       
       if (isLoginMode) {
-        result = await login(formData.nim, formData.password);
+        console.log('🔐 Attempting login with NIM:', formData.nim);
+        result = await login(formData.nim.trim(), formData.password);
       } else {
-        result = await register(formData.nim, formData.username, formData.password, formData.isAdmin);
+        console.log('📝 Attempting registration with NIM:', formData.nim);
+        result = await register({
+          nim: formData.nim.trim(),
+          username: formData.username.trim(),
+          password: formData.password,
+          isAdmin: formData.isAdmin
+        });
       }
 
-      if (result.success) {
+      console.log('🔄 Auth result:', result);
+
+      if (result && result.success) {
         setMessage({ text: result.message, type: 'success' });
         
         if (isLoginMode) {
           // Login successful - navigation will be handled by useEffect
-          const redirectPath = result.user?.isAdmin ? '/admin/dashboard' : '/dashboard';
-          navigate(redirectPath, { replace: true });
+          console.log('✅ Login successful, user role:', result.data?.role);
+          const redirectPath = result.data?.isAdmin ? '/admin/dashboard' : '/dashboard';
+          setTimeout(() => {
+            navigate(redirectPath, { replace: true });
+          }, 1000);
         } else {
           // Register successful - switch to login mode
           setTimeout(() => {
             setIsLoginMode(true);
-            setFormData({ nim: formData.nim, username: '', password: '', isAdmin: false });
-            setMessage({ text: 'Registrasi berhasil! Silakan login dengan akun baru Anda', type: 'info' });
+            setFormData({ 
+              nim: formData.nim, 
+              username: '', 
+              password: '', 
+              isAdmin: false 
+            });
+            setMessage({ 
+              text: 'Registrasi berhasil! Silakan login dengan akun baru Anda', 
+              type: 'info' 
+            });
           }, 2000);
         }
       } else {
-        setMessage({ text: result.message, type: 'error' });
+        // Handle failed result
+        console.error('❌ Auth failed:', result);
+        setMessage({ 
+          text: result?.message || 'Terjadi kesalahan yang tidak terduga', 
+          type: 'error' 
+        });
       }
     } catch (error) {
-      setMessage({ text: 'Terjadi kesalahan yang tidak terduga', type: 'error' });
-      console.error('Auth error:', error);
+      console.error('❌ Auth error:', error);
+      setMessage({ 
+        text: error.message || 'Terjadi kesalahan yang tidak terduga', 
+        type: 'error' 
+      });
     }
   };
 
@@ -75,6 +160,13 @@ const AuthApp = () => {
     setIsLoginMode(!isLoginMode);
     setFormData({ nim: '', username: '', password: '', isAdmin: false });
     setMessage({ text: '', type: '' });
+    setValidationErrors({});
+  };
+
+  const getInputClassName = (fieldName) => {
+    const baseClass = "w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200";
+    const errorClass = validationErrors[fieldName] ? "border-red-300" : "border-gray-300";
+    return `${baseClass} ${errorClass}`;
   };
 
   return (
@@ -125,12 +217,13 @@ const AuthApp = () => {
 
           {/* Message */}
           {message.text && (
-            <div className={`mb-4 p-3 rounded-lg text-sm ${
+            <div className={`mb-4 p-3 rounded-lg text-sm flex items-center gap-2 ${
               message.type === 'success' ? 'bg-green-100 text-green-700 border border-green-200' :
               message.type === 'error' ? 'bg-red-100 text-red-700 border border-red-200' :
               'bg-blue-100 text-blue-700 border border-blue-200'
             }`}>
-              {message.text}
+              {message.type === 'error' && <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+              <span>{message.text}</span>
             </div>
           )}
 
@@ -148,12 +241,18 @@ const AuthApp = () => {
                   name="nim"
                   value={formData.nim}
                   onChange={handleInputChange}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                  placeholder="Masukkan NIM"
+                  className={getInputClassName('nim')}
+                  placeholder="Masukkan NIM (bebas format: angka, huruf, atau kombinasi)"
                   required
                   disabled={loading}
                 />
               </div>
+              {validationErrors.nim && (
+                <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="w-4 h-4" />
+                  {validationErrors.nim}
+                </p>
+              )}
             </div>
 
             {/* Username Field (hanya untuk register) */}
@@ -169,12 +268,18 @@ const AuthApp = () => {
                     name="username"
                     value={formData.username}
                     onChange={handleInputChange}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    className={getInputClassName('username')}
                     placeholder="Masukkan username"
                     required
                     disabled={loading}
                   />
                 </div>
+                {validationErrors.username && (
+                  <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                    <AlertCircle className="w-4 h-4" />
+                    {validationErrors.username}
+                  </p>
+                )}
               </div>
             )}
 
@@ -190,7 +295,7 @@ const AuthApp = () => {
                   name="password"
                   value={formData.password}
                   onChange={handleInputChange}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                  className={getInputClassName('password')}
                   placeholder="Masukkan password"
                   required
                   disabled={loading}
@@ -204,6 +309,12 @@ const AuthApp = () => {
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {validationErrors.password && (
+                <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+                  <AlertCircle className="w-4 h-4" />
+                  {validationErrors.password}
+                </p>
+              )}
             </div>
 
             {/* Admin Checkbox (hanya untuk register) */}
@@ -264,10 +375,18 @@ const AuthApp = () => {
 
         {/* Info Card */}
         <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-sm text-yellow-800">
-            <strong>Demo:</strong> Aplikasi ini terhubung ke User Service (port 3001) dan Mail Service (port 3002). 
-            Pastikan kedua backend service sudah berjalan sebelum menggunakan aplikasi.
-          </p>
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-yellow-800">
+                <strong>Demo:</strong> Aplikasi ini terhubung ke User Service (port 3001) dan Mail Service (port 3002). 
+                Pastikan kedua backend service sudah berjalan sebelum menggunakan aplikasi.
+              </p>
+              <p className="text-xs text-yellow-700 mt-1">
+                NIM dapat berupa format bebas: angka (123456), huruf (ADMIN), atau kombinasi (ABC123).
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -24,83 +24,60 @@ import { SURAT_STATUS } from '../../../utils/constants';
 const ListSurat = () => {
   const navigate = useNavigate();
   const { getUserId } = useAuth();
-  
-  // State
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [suratList, setSuratList] = useState([]);
   const [filteredSurat, setFilteredSurat] = useState([]);
   const [error, setError] = useState(null);
-  
-  // Filter & Search state
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
-  
-  // Pagination state
+
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const itemsPerPage = 10;
 
-  // Fetch surat data
-  const fetchSuratData = async (isRefresh = false) => {
-    try {
-      if (isRefresh) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-      setError(null);
+ const fetchSuratData = async (refresh = false) => {
+  try {
+    refresh ? setRefreshing(true) : setLoading(true);
+    setError(null);
 
-      const userId = getUserId();
-      if (!userId) {
-        throw new Error('User ID tidak ditemukan');
-      }
+    // langsung dapat array surat
+    const surat = await suratApi.getUserSurat();
 
-      const result = await suratApi.getUserSurat(userId);
-      
-      if (result.success) {
-        const data = result.data || [];
-        setSuratList(data);
-        setFilteredSurat(data);
-      } else {
-        throw new Error(result.message || 'Gagal memuat data surat');
-      }
-    } catch (error) {
-      console.error('Fetch surat error:', error);
-      const errorResult = handleApiError(error);
-      setError(errorResult.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+    // set state dengan array tersebut
+    setSuratList(surat);
+    setFilteredSurat(surat);
+  } catch (e) {
+    console.error('Fetch surat error:', e);
+    setError(handleApiError(e).message);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
-  // Initial load
+
   useEffect(() => {
     fetchSuratData();
   }, []);
 
-  // Filter & Search effect
   useEffect(() => {
     let filtered = suratList;
-
-    // Search filter
     if (searchTerm) {
       filtered = filtered.filter(surat =>
         surat.subject_surat.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
-
-    // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(surat => {
-        const latestStatus = surat.histories?.[0]?.status || 'diproses';
-        return latestStatus === statusFilter;
+        const latest = surat.histories?.[0]?.status || 'diproses';
+        return latest === statusFilter;
       });
     }
-
     setFilteredSurat(filtered);
-    setCurrentPage(1); // Reset to first page when filtering
+    setCurrentPage(1);
   }, [searchTerm, statusFilter, suratList]);
 
   // Pagination calculations

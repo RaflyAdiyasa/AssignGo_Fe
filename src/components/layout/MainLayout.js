@@ -35,7 +35,7 @@ const MainLayout = ({ children, sidebarItems = [] }) => {
 
         {/* Main Content */}
         <main 
-          className={`flex-1 transition-all duration-300 ${
+          className={`flex-1 transition-all flex-1 overflow-y-auto pt-14 duration-300 ${
             sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
           }`}
         >

@@ -1,31 +1,44 @@
-// src/components/common/ProtectedRoute.js
+// src/components/common/ProtectedRoute.js - Fixed React hooks rules
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
-  const location = useLocation();
-
-  // Show loading spinner while checking authentication
+  // Always call useAuth at the top level - no conditional calls
+  const { isAuthenticated, loading, isAdmin, user } = useAuth();
+  
+  // Show loading while checking authentication
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat...</p>
+        </div>
       </div>
     );
   }
-
-  // Redirect to login if not authenticated
+  
+  // If not authenticated, redirect to login
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    console.log('🔒 User not authenticated, redirecting to login');
+    return <Navigate to="/login" replace />;
   }
-
-  // Redirect to unauthorized if admin access required but user is not admin
+  
+  // If admin is required but user is not admin, redirect to unauthorized
   if (requireAdmin && !isAdmin()) {
+    console.log('⛔ Admin access required but user is not admin:', user?.role);
     return <Navigate to="/unauthorized" replace />;
   }
-
+  
+  // User is authenticated and has proper permissions
+  console.log('✅ User authenticated and authorized:', { 
+    isAuthenticated, 
+    requireAdmin, 
+    userRole: user?.role,
+    isAdminUser: isAdmin() 
+  });
+  
   return children;
 };
 
