@@ -1,4 +1,4 @@
-// src/pages/user/surat/CreateSurat.js - Fixed to match backend API
+// src/pages/user/surat/CreateSurat.js - Fixed version
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -14,11 +14,13 @@ import {
   Loader
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
+import { suratApi } from '../../../services/api/suratApi';
 import LoadingSpinner from '../../../components/common/LoadingSpinner';
+import { handleApiError } from '../../../services/utils/errorHandler';
 
 const CreateSurat = () => {
   const navigate = useNavigate();
-  const { getToken, user } = useAuth();
+  const { getUserId, getToken, user } = useAuth();
   
   // Form state
   const [formData, setFormData] = useState({
@@ -134,54 +136,65 @@ const CreateSurat = () => {
     }
   };
 
-  // FIXED: API call function sesuai dokumentasi backend
+  // API call function
   const createSuratAPI = async (subjectSurat, file) => {
-    const token = getToken();
-    
-    if (!token) {
-      throw new Error('Token tidak ditemukan. Silakan login ulang.');
-    }
-
-    // Buat FormData sesuai format backend
-    const formData = new FormData();
-    formData.append('subject_surat', subjectSurat);
-    formData.append('file_surat', file, file.name);
-
-    // Debug FormData
-    console.log('📦 FormData being sent:');
-    for (let [key, value] of formData.entries()) {
-      if (value instanceof File) {
-        console.log(`${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
-      } else {
-        console.log(`${key}: ${value}`);
+    // Try existing suratApi first
+    try {
+      console.log('🔄 Trying existing suratApi.createSurat...');
+      const result = await suratApi.createSurat({
+        subject_surat: subjectSurat
+      }, file);
+      return result;
+    } catch (apiError) {
+      console.log('⚠️ suratApi failed, falling back to direct API call...');
+      console.log('API Error:', apiError);
+      
+      // Fallback to direct API call
+      const token = getToken();
+      
+      if (!token) {
+        throw new Error('Token tidak ditemukan. Silakan login ulang.');
       }
+
+      // Create FormData according to backend format
+      const formDataPayload = new FormData();
+      formDataPayload.append('subject_surat', subjectSurat);
+      formDataPayload.append('file_surat', file, file.name);
+
+      // Debug FormData
+      console.log('📦 FormData being sent (fallback):');
+      for (let [key, value] of formDataPayload.entries()) {
+        if (value instanceof File) {
+          console.log(key + ': File(' + value.name + ', ' + value.size + ' bytes, ' + value.type + ')');
+        } else {
+          console.log(key + ': ' + value);
+        }
+      }
+
+      // Send request to backend
+      const response = await fetch(API_BASE_URL + '/mails', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+        },
+        body: formDataPayload
+      });
+
+      console.log('📡 Response status:', response.status);
+
+      // Parse response
+      const result = await response.json();
+      console.log('📡 Response data:', result);
+
+      if (!response.ok) {
+        throw new Error(result.message || result.error || 'HTTP ' + response.status + ': ' + response.statusText);
+      }
+
+      return result;
     }
-
-    // Kirim request ke backend
-    const response = await fetch(`${API_BASE_URL}/mails`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        // JANGAN set Content-Type untuk FormData, biarkan browser yang set
-      },
-      body: formData
-    });
-
-    console.log('📡 Response status:', response.status);
-    console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
-
-    // Parse response
-    const result = await response.json();
-    console.log('📡 Response data:', result);
-
-    if (!response.ok) {
-      throw new Error(result.message || result.error || `HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    return result;
   };
 
-  // Handle form submit - FIXED VERSION
+  // Handle form submit
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -201,6 +214,12 @@ const CreateSurat = () => {
     setMessage({ text: '', type: '' });
 
     try {
+      const userId = getUserId();
+      if (!userId) {
+        console.warn('⚠️ User ID tidak ditemukan, melanjutkan tanpa userId...');
+      }
+
+      console.log('👤 User ID:', userId);
       console.log('📋 Form data:', formData);
       console.log('📎 Selected file:', {
         name: selectedFile.name,
@@ -208,7 +227,7 @@ const CreateSurat = () => {
         type: selectedFile.type
       });
 
-      // Pastikan file valid
+      // Validate file
       if (!selectedFile || selectedFile.size === 0) {
         throw new Error('File tidak valid atau kosong');
       }
@@ -231,7 +250,7 @@ const CreateSurat = () => {
       console.log('✅ API Response:', result);
 
       // Check if request was successful
-      if (result) {
+      if (result && (result.success === true || result.status === 'success' || result.message?.includes('berhasil') || result.message?.includes('successfully') || result.mail)) {
         setMessage({ 
           text: 'Surat berhasil diajukan! Anda akan diarahkan ke halaman surat.', 
           type: 'success' 
@@ -252,7 +271,7 @@ const CreateSurat = () => {
           navigate('/surat');
         }, 3000);
       } else {
-        throw new Error('Respon tidak valid dari server');
+        throw new Error(result?.message || result?.error || 'Gagal mengajukan surat - response tidak dikenal');
       }
 
     } catch (error) {
@@ -260,27 +279,43 @@ const CreateSurat = () => {
       
       setUploadProgress(0);
       
-      let errorMessage = error.message || 'Terjadi kesalahan tidak dikenal';
+      // Use existing handleApiError
+      const errorResult = handleApiError(error);
+      let errorMessage = errorResult.message;
       
       // Handle specific error cases
-      if (error.message?.includes('Failed to fetch')) {
+      if (error.response) {
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        console.log('📊 Error response data:', data);
+        
+        if (status === 413) {
+          errorMessage = 'File terlalu besar. Maksimal 5MB.';
+        } else if (status === 415) {
+          errorMessage = 'Format file tidak didukung.';
+        } else if (status === 400) {
+          if (data?.message?.includes('no file') || data?.error?.includes('no file')) {
+            errorMessage = 'File tidak terdeteksi. Pastikan file telah dipilih dengan benar.';
+          } else {
+            errorMessage = data?.message || data?.error || 'Data tidak valid. Periksa form Anda.';
+          }
+        } else if (status === 401) {
+          errorMessage = 'Sesi Anda telah berakhir. Silakan login ulang.';
+        } else if (status === 500) {
+          errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
+        }
+      } else if (error.code === 'NETWORK_ERROR') {
         errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
-      } else if (error.message?.includes('413')) {
-        errorMessage = 'File terlalu besar. Maksimal 5MB.';
-      } else if (error.message?.includes('415')) {
-        errorMessage = 'Format file tidak didukung.';
-      } else if (error.message?.includes('400')) {
-        errorMessage = 'Data tidak valid. Periksa form Anda.';
-      } else if (error.message?.includes('401')) {
-        errorMessage = 'Sesi Anda telah berakhir. Silakan login ulang.';
-      } else if (error.message?.includes('500')) {
-        errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
+      } else if (error.message?.includes('Failed to fetch')) {
+        errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
       } else if (error.message?.includes('Token tidak ditemukan')) {
         errorMessage = 'Sesi berakhir. Silakan login ulang.';
-        // Optionally redirect to login
         setTimeout(() => {
           navigate('/login');
         }, 2000);
+      } else if (error.message?.includes('no file') || error.message?.includes('File tidak valid')) {
+        errorMessage = 'File tidak terdeteksi. Silakan pilih file lagi.';
       }
       
       setMessage({ 
@@ -543,7 +578,7 @@ const CreateSurat = () => {
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
                         className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${uploadProgress}%` }}
+                        style={{ width: uploadProgress + '%' }}
                       ></div>
                     </div>
                   </div>
