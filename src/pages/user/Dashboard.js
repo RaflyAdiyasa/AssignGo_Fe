@@ -1,4 +1,4 @@
-// src/pages/user/Dashboard.js
+// src/pages/user/Dashboard.js - FIXED version
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
@@ -45,11 +45,29 @@ const Dashboard = () => {
       }
       setError(null);
 
-      // Fetch user's surat (backend membaca userId dari JWT)
-      const suratList = await suratApi.getUserSurat();
+      console.log('📊 Fetching dashboard data...');
 
+      // FIXED: Call API dan handle response wrapper
+      const response = await suratApi.getUserSurat();
+      
+      // FIXED: Check response format dan extract data
+      let suratList = [];
+      if (response && response.success && response.data) {
+        suratList = response.data;
+      } else if (response && Array.isArray(response)) {
+        // Fallback jika API mengembalikan array langsung
+        suratList = response;
+      } else {
+        console.warn('Unexpected response format:', response);
+        suratList = [];
+      }
+
+      console.log('📊 Dashboard surat data:', suratList);
+
+      // FIXED: Validasi array
       if (!Array.isArray(suratList)) {
-        throw new Error('Format data surat tidak valid');
+        console.error('Expected array but got:', typeof suratList, suratList);
+        throw new Error('Format data surat tidak valid - bukan array');
       }
 
       // Calculate statistics
@@ -61,16 +79,36 @@ const Dashboard = () => {
       };
 
       suratList.forEach(surat => {
-        const status = surat.latestStatus || 'diproses';
-        newStats[status] = (newStats[status] || 0) + 1;
+        // FIXED: Use latestStatus from backend or fallback to status determination
+        let status = 'diproses'; // default
+        
+        if (surat.latestStatus) {
+          // Backend sudah provide latestStatus
+          status = surat.latestStatus;
+        } else if (surat.histories && Array.isArray(surat.histories) && surat.histories.length > 0) {
+          // Ambil status terbaru dari histories
+          status = surat.histories[0].status || 'diproses';
+        }
+        
+        // Count status
+        if (newStats.hasOwnProperty(status)) {
+          newStats[status]++;
+        } else {
+          newStats.diproses++; // fallback ke diproses jika status tidak dikenal
+        }
       });
 
+      console.log('📊 Dashboard stats:', newStats);
       setStats(newStats);
       
-      // Recent 5
-      setRecentSurat(suratList.slice(0, 5));
+      // Recent 5 surat - sort by date desc
+      const sortedSurat = [...suratList].sort((a, b) => 
+        new Date(b.tanggal_pengiriman) - new Date(a.tanggal_pengiriman)
+      );
+      setRecentSurat(sortedSurat.slice(0, 5));
+
     } catch (err) {
-      console.error('Dashboard fetch error:', err);
+      console.error('❌ Dashboard fetch error:', err);
       const handled = handleApiError(err);
       setError(handled.message);
     } finally {
@@ -200,7 +238,14 @@ const Dashboard = () => {
             ) : (
               <div className="space-y-4">
                 {recentSurat.map(surat => {
-                  const status = surat.latestStatus || 'diproses';
+                  // FIXED: Get status properly
+                  let status = 'diproses';
+                  if (surat.latestStatus) {
+                    status = surat.latestStatus;
+                  } else if (surat.histories && Array.isArray(surat.histories) && surat.histories.length > 0) {
+                    status = surat.histories[0].status || 'diproses';
+                  }
+
                   return (
                     <div
                       key={surat.id}

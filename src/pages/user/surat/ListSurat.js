@@ -1,4 +1,4 @@
-// src/pages/user/surat/ListSurat.js
+// src/pages/user/surat/ListSurat.js - FIXED version
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
@@ -38,44 +38,88 @@ const ListSurat = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
- const fetchSuratData = async (refresh = false) => {
-  try {
-    refresh ? setRefreshing(true) : setLoading(true);
-    setError(null);
+  // FIXED: Fetch surat data dengan proper handling response wrapper
+  const fetchSuratData = async (refresh = false) => {
+    try {
+      refresh ? setRefreshing(true) : setLoading(true);
+      setError(null);
 
-    // langsung dapat array surat
-    const surat = await suratApi.getUserSurat();
+      console.log('📋 Fetching user surat data...');
 
-    // set state dengan array tersebut
-    setSuratList(surat);
-    setFilteredSurat(surat);
-  } catch (e) {
-    console.error('Fetch surat error:', e);
-    setError(handleApiError(e).message);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
+      // FIXED: Call API dan handle response wrapper
+      const response = await suratApi.getUserSurat();
+      
+      // FIXED: Extract data dari response wrapper
+      let suratData = [];
+      if (response && response.success && response.data) {
+        suratData = response.data;
+      } else if (response && Array.isArray(response)) {
+        // Fallback jika API mengembalikan array langsung
+        suratData = response;
+      } else {
+        console.warn('Unexpected surat response format:', response);
+        suratData = [];
+      }
 
+      console.log('📋 List surat data:', suratData);
+
+      // FIXED: Validasi array
+      if (!Array.isArray(suratData)) {
+        console.error('Expected array but got:', typeof suratData, suratData);
+        throw new Error('Format data surat tidak valid - bukan array');
+      }
+
+      // Set data dengan array yang sudah diekstrak
+      setSuratList(suratData);
+      setFilteredSurat(suratData);
+
+    } catch (e) {
+      console.error('❌ Fetch surat error:', e);
+      const handled = handleApiError(e);
+      setError(handled.message);
+      
+      // Set empty arrays on error
+      setSuratList([]);
+      setFilteredSurat([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     fetchSuratData();
   }, []);
 
+  // FIXED: Filter logic dengan handling latestStatus
   useEffect(() => {
     let filtered = suratList;
+    
+    // Search filter
     if (searchTerm) {
       filtered = filtered.filter(surat =>
         surat.subject_surat.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
+    
+    // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(surat => {
-        const latest = surat.histories?.[0]?.status || 'diproses';
-        return latest === statusFilter;
+        // FIXED: Get latest status dengan proper fallback
+        let latestStatus = 'diproses'; // default
+        
+        if (surat.latestStatus) {
+          // Backend sudah provide latestStatus
+          latestStatus = surat.latestStatus;
+        } else if (surat.histories && Array.isArray(surat.histories) && surat.histories.length > 0) {
+          // Ambil status terbaru dari histories
+          latestStatus = surat.histories[0].status || 'diproses';
+        }
+        
+        return latestStatus === statusFilter;
       });
     }
+    
     setFilteredSurat(filtered);
     setCurrentPage(1);
   }, [searchTerm, statusFilter, suratList]);
@@ -104,16 +148,23 @@ const ListSurat = () => {
   };
 
   const handleOpenUrl = (url) => {
-    window.open(url, '_blank');
+    if (url) {
+      window.open(url, '_blank');
+    }
   };
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
   };
 
-  // Get status from latest history
+  // FIXED: Get status from latest history atau latestStatus
   const getLatestStatus = (surat) => {
-    return surat.histories?.[0]?.status || 'diproses';
+    if (surat.latestStatus) {
+      return surat.latestStatus;
+    } else if (surat.histories && Array.isArray(surat.histories) && surat.histories.length > 0) {
+      return surat.histories[0].status || 'diproses';
+    }
+    return 'diproses';
   };
 
   if (loading) {
@@ -177,9 +228,9 @@ const ListSurat = () => {
                   Semua
                 </button>
                 <button
-                  onClick={() => handleStatusFilter(SURAT_STATUS.DIPROSES)}
+                  onClick={() => handleStatusFilter('diproses')}
                   className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                    statusFilter === SURAT_STATUS.DIPROSES 
+                    statusFilter === 'diproses' 
                       ? 'bg-yellow-100 text-yellow-700' 
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
@@ -187,9 +238,9 @@ const ListSurat = () => {
                   Diproses
                 </button>
                 <button
-                  onClick={() => handleStatusFilter(SURAT_STATUS.DISETUJUI)}
+                  onClick={() => handleStatusFilter('disetujui')}
                   className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                    statusFilter === SURAT_STATUS.DISETUJUI 
+                    statusFilter === 'disetujui' 
                       ? 'bg-green-100 text-green-700' 
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
@@ -197,9 +248,9 @@ const ListSurat = () => {
                   Disetujui
                 </button>
                 <button
-                  onClick={() => handleStatusFilter(SURAT_STATUS.DITOLAK)}
+                  onClick={() => handleStatusFilter('ditolak')}
                   className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                    statusFilter === SURAT_STATUS.DITOLAK 
+                    statusFilter === 'ditolak' 
                       ? 'bg-red-100 text-red-700' 
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
@@ -308,13 +359,15 @@ const ListSurat = () => {
                             >
                               <Eye className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={() => handleOpenUrl(surat.url_file_surat)}
-                              className="bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors"
-                              title="Buka File"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </button>
+                            {surat.url_file_surat && (
+                              <button
+                                onClick={() => handleOpenUrl(surat.url_file_surat)}
+                                className="bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors"
+                                title="Buka File"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -347,15 +400,17 @@ const ListSurat = () => {
                         {formatDate(surat.tanggal_pengiriman)}
                       </div>
                       <div className="flex items-center space-x-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenUrl(surat.url_file_surat);
-                          }}
-                          className="text-blue-600 hover:text-blue-700"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </button>
+                        {surat.url_file_surat && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenUrl(surat.url_file_surat);
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
+                        )}
                         <Eye className="w-4 h-4 text-gray-400" />
                       </div>
                     </div>

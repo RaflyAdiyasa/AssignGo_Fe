@@ -1,4 +1,4 @@
-// src/pages/user/Profile.js
+// src/pages/user/Profile.js - FIXED version
 import React, { useState, useEffect } from 'react';
 import { 
   User, 
@@ -14,11 +14,12 @@ import {
   Edit3
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { userApi } from '../../services/api/userApi';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { handleApiError } from '../../services/utils/errorHandler';
 
 const Profile = () => {
-  const { user, updateUserProfile, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   
   // State
   const [activeTab, setActiveTab] = useState('profile');
@@ -143,7 +144,7 @@ const Profile = () => {
     }
   };
 
-  // Handle profile form submit
+  // FIXED: Handle profile form submit dengan userApi langsung
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
     
@@ -159,23 +160,61 @@ const Profile = () => {
     setMessage({ text: '', type: '' });
 
     try {
-      const result = await updateUserProfile({
+      console.log('👤 Updating profile with data:', { username: profileData.username.trim() });
+
+      // FIXED: Call userApi.updateProfile langsung
+      const result = await userApi.updateProfile({
         username: profileData.username.trim()
       });
 
-      if (result.success) {
+      console.log('👤 Update profile result:', result);
+
+      // FIXED: Handle response wrapper format dari userApi
+      if (result && result.success) {
         setMessage({ 
-          text: 'Profile berhasil diperbarui!', 
+          text: result.message || 'Profile berhasil diperbarui!', 
+          type: 'success' 
+        });
+      } else if (result && result.data && !result.error) {
+        setMessage({ 
+          text: result.message || 'Profile berhasil diperbarui!', 
           type: 'success' 
         });
       } else {
-        throw new Error(result.message || 'Gagal memperbarui profile');
+        const errorMessage = result && result.message 
+          ? result.message 
+          : 'Gagal memperbarui profile';
+        throw new Error(errorMessage);
       }
+
     } catch (error) {
-      console.error('Update profile error:', error);
-      const errorResult = handleApiError(error);
+      console.error('❌ Update profile error:', error);
+      
+      let errorMessage = 'Gagal memperbarui profile';
+      
+      if (error.response) {
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        if (status === 400) {
+          errorMessage = data.message || 'Data tidak valid. Periksa form Anda.';
+        } else if (status === 401) {
+          errorMessage = 'Sesi Anda telah berakhir. Silakan login ulang.';
+        } else if (status === 403) {
+          errorMessage = 'Anda tidak memiliki akses untuk mengubah profile.';
+        } else if (status === 500) {
+          errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
+        } else {
+          errorMessage = data.message || `Server error: ${status}`;
+        }
+      } else if (error.request) {
+        errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       setMessage({ 
-        text: errorResult.message, 
+        text: errorMessage, 
         type: 'error' 
       });
     } finally {
@@ -183,7 +222,7 @@ const Profile = () => {
     }
   };
 
-  // Handle password form submit
+  // FIXED: Handle password form submit dengan userApi langsung
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
     
@@ -199,13 +238,32 @@ const Profile = () => {
     setMessage({ text: '', type: '' });
 
     try {
-      const result = await updateUserProfile({
+      console.log('🔐 Updating password...');
+
+      // FIXED: Call userApi.updateProfile untuk password
+      const result = await userApi.updateProfile({
+        currentPassword: passwordData.currentPassword,
         password: passwordData.newPassword
       });
 
-      if (result.success) {
+      console.log('🔐 Update password result:', result);
+
+      // FIXED: Handle response wrapper format dari userApi
+      if (result && result.success) {
         setMessage({ 
-          text: 'Password berhasil diubah!', 
+          text: result.message || 'Password berhasil diubah!', 
+          type: 'success' 
+        });
+        
+        // Reset password form
+        setPasswordData({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+      } else if (result && result.data && !result.error) {
+        setMessage({ 
+          text: result.message || 'Password berhasil diubah!', 
           type: 'success' 
         });
         
@@ -216,13 +274,40 @@ const Profile = () => {
           confirmPassword: ''
         });
       } else {
-        throw new Error(result.message || 'Gagal mengubah password');
+        const errorMessage = result && result.message 
+          ? result.message 
+          : 'Gagal mengubah password';
+        throw new Error(errorMessage);
       }
+
     } catch (error) {
-      console.error('Update password error:', error);
-      const errorResult = handleApiError(error);
+      console.error('❌ Update password error:', error);
+      
+      let errorMessage = 'Gagal mengubah password';
+      
+      if (error.response) {
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        if (status === 400) {
+          errorMessage = data.message || 'Password saat ini salah atau data tidak valid.';
+        } else if (status === 401) {
+          errorMessage = 'Password saat ini salah atau sesi telah berakhir.';
+        } else if (status === 403) {
+          errorMessage = 'Anda tidak memiliki akses untuk mengubah password.';
+        } else if (status === 500) {
+          errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
+        } else {
+          errorMessage = data.message || `Server error: ${status}`;
+        }
+      } else if (error.request) {
+        errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       setMessage({ 
-        text: errorResult.message, 
+        text: errorMessage, 
         type: 'error' 
       });
     } finally {
@@ -399,7 +484,7 @@ const Profile = () => {
                 <div className="flex justify-end">
                   <button
                     type="submit"
-                    disabled={loading || !profileData.username.trim()}
+                    disabled={loading || !profileData.username.trim() || profileData.username.trim() === user?.username}
                     className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2"
                   >
                     {loading ? (

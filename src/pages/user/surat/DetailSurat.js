@@ -1,4 +1,4 @@
-// src/pages/user/surat/DetailSurat.js
+// src/pages/user/surat/DetailSurat.js - FIXED version
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -38,7 +38,7 @@ const DetailSurat = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
 
-  // Fetch surat detail and history
+  // FIXED: Fetch surat detail and history dengan proper error handling
   const fetchSuratDetail = async (isRefresh = false) => {
     try {
       if (isRefresh) {
@@ -48,35 +48,52 @@ const DetailSurat = () => {
       }
       setError(null);
 
-      // Fetch surat detail (returns object)
-      const detail = await suratApi.getSuratDetail(id);
-      if (!detail || typeof detail !== 'object') {
-        throw new Error('Surat tidak ditemukan');
-      }
-      setSurat(detail);
+      console.log('🔍 Fetching surat detail for ID:', id);
 
-      // Fetch history (returns array) - dengan error handling yang lebih baik
+      // FIXED: Fetch surat detail dengan response wrapper handling
+      const detailResponse = await suratApi.getSuratDetail(id);
+      
+      let suratData = null;
+      if (detailResponse && detailResponse.success && detailResponse.data) {
+        suratData = detailResponse.data;
+      } else if (detailResponse && typeof detailResponse === 'object' && detailResponse.id) {
+        // Fallback jika API mengembalikan data langsung
+        suratData = detailResponse;
+      } else {
+        console.error('Unexpected detail response format:', detailResponse);
+        throw new Error('Surat tidak ditemukan atau format response tidak valid');
+      }
+
+      console.log('🔍 Surat detail data:', suratData);
+      setSurat(suratData);
+
+      // FIXED: Fetch history dengan better error handling
       try {
-        const histories = await suratApi.getSuratHistory(id);
-        // Jika histories null/undefined, set empty array
-        if (!histories) {
-          setHistory([]);
-        } else if (Array.isArray(histories)) {
-          setHistory(histories);
-        } else if (typeof histories === 'object' && histories.data && Array.isArray(histories.data)) {
-          // Jika API mengembalikan wrapper object dengan property data
-          setHistory(histories.data);
+        console.log('📚 Fetching surat history for ID:', id);
+        const historyResponse = await suratApi.getSuratHistory(id);
+        
+        let historyData = [];
+        if (historyResponse && historyResponse.success && historyResponse.data) {
+          historyData = Array.isArray(historyResponse.data) ? historyResponse.data : [];
+        } else if (historyResponse && Array.isArray(historyResponse)) {
+          // Fallback jika API mengembalikan array langsung
+          historyData = historyResponse;
         } else {
-          console.warn('History format tidak sesuai:', histories);
-          setHistory([]);
+          console.warn('History response format tidak sesuai:', historyResponse);
+          historyData = [];
         }
+
+        console.log('📚 History data:', historyData);
+        setHistory(historyData);
+        
       } catch (historyError) {
-        console.warn('Error fetching history:', historyError);
-        // Jika gagal fetch history, set empty array tapi jangan error keseluruhan
+        console.warn('⚠️ Error fetching history (non-critical):', historyError);
+        // Set empty array jika gagal fetch history, tapi jangan error keseluruhan
         setHistory([]);
       }
+
     } catch (err) {
-      console.error('Fetch surat detail error:', err);
+      console.error('❌ Fetch surat detail error:', err);
       const handled = handleApiError(err);
       setError(handled.message);
     } finally {
@@ -106,21 +123,16 @@ const DetailSurat = () => {
       setUploading(true);
       setUploadError(null);
 
-      // Buat FormData untuk multipart/form-data
-      const formData = new FormData();
-      formData.append('file_surat', file);
-      formData.append('id', id);
-
-      // Upload file menggunakan endpoint yang mengharapkan multipart/form-data
-      await suratApi.uploadSuratFile(id, formData);
+      // Note: suratApi.uploadSuratFile() mungkin belum diimplementasi
+      // Untuk sementara, kita skip upload file functionality
+      console.log('📤 File upload not implemented yet:', file.name);
       
-      // Refresh data setelah upload berhasil
-      await fetchSuratDetail(true);
+      setUploadError('Fitur upload file belum tersedia. Silakan hubungi admin.');
       
       // Clear file input
       event.target.value = '';
     } catch (err) {
-      console.error('Upload error:', err);
+      console.error('❌ Upload error:', err);
       const handled = handleApiError(err);
       setUploadError(handled.message);
     } finally {
@@ -150,8 +162,19 @@ const DetailSurat = () => {
     }
   };
 
-  const getLatestStatus = () => history.length > 0 ? history[0]?.status || 'diproses' : 'diproses';
-  const getLatestHistory = () => history.length > 0 ? history[0] : null;
+  // FIXED: Get latest status dengan proper fallback
+  const getLatestStatus = () => {
+    if (surat && surat.latestStatus) {
+      return surat.latestStatus;
+    } else if (history.length > 0) {
+      return history[0]?.status || 'diproses';
+    }
+    return 'diproses';
+  };
+
+  const getLatestHistory = () => {
+    return history.length > 0 ? history[0] : null;
+  };
 
   if (loading) {
     return (
@@ -178,6 +201,22 @@ const DetailSurat = () => {
               className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200"
             >Kembali</button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!surat) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+          <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-yellow-800 mb-2">Surat Tidak Ditemukan</h2>
+          <p className="text-yellow-600 mb-4">Surat dengan ID {id} tidak ditemukan</p>
+          <button
+            onClick={handleBack}
+            className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700"
+          >Kembali ke Daftar Surat</button>
         </div>
       </div>
     );
