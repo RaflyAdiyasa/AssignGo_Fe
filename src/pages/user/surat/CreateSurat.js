@@ -1,4 +1,4 @@
-// src/pages/user/surat/CreateSurat.js - Fixed version
+// src/pages/user/surat/CreateSurat.js - Fixed to match backend API
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -14,13 +14,11 @@ import {
   Loader
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
-import { suratApi } from '../../../services/api/suratApi';
 import LoadingSpinner from '../../../components/common/LoadingSpinner';
-import { handleApiError } from '../../../services/utils/errorHandler';
 
 const CreateSurat = () => {
   const navigate = useNavigate();
-  const { getUserId, user } = useAuth();
+  const { getToken, user } = useAuth();
   
   // Form state
   const [formData, setFormData] = useState({
@@ -34,6 +32,9 @@ const CreateSurat = () => {
 
   // File upload progress
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  // API Base URL
+  const API_BASE_URL = 'https://assigngo-mail-424905547173.us-central1.run.app/api';
 
   // Validation function
   const validateForm = () => {
@@ -52,12 +53,12 @@ const CreateSurat = () => {
     if (!selectedFile) {
       newErrors.file = 'File surat wajib dipilih';
     } else {
-      // File size validation (5MB - sesuai backend)
+      // File size validation (5MB)
       if (selectedFile.size > 5 * 1024 * 1024) {
         newErrors.file = 'Ukuran file tidak boleh lebih dari 5MB';
       }
       
-      // File type validation - sesuai yang biasa diterima backend
+      // File type validation
       const allowedTypes = [
         'application/pdf', 
         'application/msword', 
@@ -100,7 +101,8 @@ const CreateSurat = () => {
       console.log('📎 File selected:', {
         name: file.name,
         size: file.size,
-        type: file.type
+        type: file.type,
+        lastModified: file.lastModified
       });
       
       setSelectedFile(file);
@@ -132,7 +134,54 @@ const CreateSurat = () => {
     }
   };
 
-  // Handle form submit
+  // FIXED: API call function sesuai dokumentasi backend
+  const createSuratAPI = async (subjectSurat, file) => {
+    const token = getToken();
+    
+    if (!token) {
+      throw new Error('Token tidak ditemukan. Silakan login ulang.');
+    }
+
+    // Buat FormData sesuai format backend
+    const formData = new FormData();
+    formData.append('subject_surat', subjectSurat);
+    formData.append('file_surat', file, file.name);
+
+    // Debug FormData
+    console.log('📦 FormData being sent:');
+    for (let [key, value] of formData.entries()) {
+      if (value instanceof File) {
+        console.log(`${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+      } else {
+        console.log(`${key}: ${value}`);
+      }
+    }
+
+    // Kirim request ke backend
+    const response = await fetch(`${API_BASE_URL}/mails`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // JANGAN set Content-Type untuk FormData, biarkan browser yang set
+      },
+      body: formData
+    });
+
+    console.log('📡 Response status:', response.status);
+    console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+
+    // Parse response
+    const result = await response.json();
+    console.log('📡 Response data:', result);
+
+    if (!response.ok) {
+      throw new Error(result.message || result.error || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return result;
+  };
+
+  // Handle form submit - FIXED VERSION
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -152,28 +201,16 @@ const CreateSurat = () => {
     setMessage({ text: '', type: '' });
 
     try {
-      const userId = getUserId();
-      if (!userId) {
-        throw new Error('User ID tidak ditemukan. Silakan login ulang.');
-      }
-
-      console.log('👤 User ID:', userId);
       console.log('📋 Form data:', formData);
-      console.log('📎 Selected file:', selectedFile);
+      console.log('📎 Selected file:', {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type
+      });
 
-      // Prepare form data sesuai dengan backend expectation
-      const formPayload = new FormData();
-      
-      // Add surat data - sesuai dengan backend controller
-      formPayload.append('subject_surat', formData.subject_surat.trim());
-      
-      // Add file dengan nama yang benar sesuai backend
-      formPayload.append('file_surat', selectedFile);
-
-      // Debug FormData contents
-      console.log('📦 FormData contents:');
-      for (let [key, value] of formPayload.entries()) {
-        console.log(`${key}:`, value);
+      // Pastikan file valid
+      if (!selectedFile || selectedFile.size === 0) {
+        throw new Error('File tidak valid atau kosong');
       }
 
       // Simulate upload progress
@@ -184,18 +221,17 @@ const CreateSurat = () => {
         });
       }, 200);
 
-      // Call API with file upload
-      console.log('🚀 Calling createSurat API...');
-      const result = await suratApi.createSurat({
-        subject_surat: formData.subject_surat.trim()
-      }, selectedFile);
+      // Call API
+      console.log('🚀 Calling backend API...');
+      const result = await createSuratAPI(formData.subject_surat.trim(), selectedFile);
 
       clearInterval(progressInterval);
       setUploadProgress(100);
 
-      console.log('✅ Surat creation result:', result);
+      console.log('✅ API Response:', result);
 
-      if (result.success || result.message?.includes('successfully') || result.mail) {
+      // Check if request was successful
+      if (result) {
         setMessage({ 
           text: 'Surat berhasil diajukan! Anda akan diarahkan ke halaman surat.', 
           type: 'success' 
@@ -216,7 +252,7 @@ const CreateSurat = () => {
           navigate('/surat');
         }, 3000);
       } else {
-        throw new Error(result.message || 'Gagal mengajukan surat');
+        throw new Error('Respon tidak valid dari server');
       }
 
     } catch (error) {
@@ -224,27 +260,27 @@ const CreateSurat = () => {
       
       setUploadProgress(0);
       
-      const errorResult = handleApiError(error);
-      let errorMessage = errorResult.message;
+      let errorMessage = error.message || 'Terjadi kesalahan tidak dikenal';
       
       // Handle specific error cases
-      if (error.response) {
-        const status = error.response.status;
-        const data = error.response.data;
-        
-        if (status === 413) {
-          errorMessage = 'File terlalu besar. Maksimal 5MB.';
-        } else if (status === 415) {
-          errorMessage = 'Format file tidak didukung.';
-        } else if (status === 400) {
-          errorMessage = data.message || 'Data tidak valid. Periksa form Anda.';
-        } else if (status === 401) {
-          errorMessage = 'Sesi Anda telah berakhir. Silakan login ulang.';
-        } else if (status === 500) {
-          errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
-        }
-      } else if (error.code === 'NETWORK_ERROR') {
+      if (error.message?.includes('Failed to fetch')) {
         errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
+      } else if (error.message?.includes('413')) {
+        errorMessage = 'File terlalu besar. Maksimal 5MB.';
+      } else if (error.message?.includes('415')) {
+        errorMessage = 'Format file tidak didukung.';
+      } else if (error.message?.includes('400')) {
+        errorMessage = 'Data tidak valid. Periksa form Anda.';
+      } else if (error.message?.includes('401')) {
+        errorMessage = 'Sesi Anda telah berakhir. Silakan login ulang.';
+      } else if (error.message?.includes('500')) {
+        errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
+      } else if (error.message?.includes('Token tidak ditemukan')) {
+        errorMessage = 'Sesi berakhir. Silakan login ulang.';
+        // Optionally redirect to login
+        setTimeout(() => {
+          navigate('/login');
+        }, 2000);
       }
       
       setMessage({ 
@@ -285,6 +321,12 @@ const CreateSurat = () => {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
+      console.log('📎 File dropped:', {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      });
+      
       setSelectedFile(file);
       
       // Clear file error when file is dropped
@@ -304,6 +346,22 @@ const CreateSurat = () => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // Debug function for development
+  const debugFile = () => {
+    if (selectedFile) {
+      console.log('🔍 Debug selected file:', {
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type,
+        lastModified: selectedFile.lastModified,
+        lastModifiedDate: selectedFile.lastModifiedDate,
+        constructor: selectedFile.constructor.name,
+        isFile: selectedFile instanceof File,
+        isBlob: selectedFile instanceof Blob
+      });
+    }
   };
 
   return (
@@ -451,8 +509,17 @@ const CreateSurat = () => {
                     <div>
                       <p className="font-medium text-gray-900">{selectedFile.name}</p>
                       <p className="text-sm text-gray-500">
-                        {formatFileSize(selectedFile.size)}
+                        {formatFileSize(selectedFile.size)} | {selectedFile.type}
                       </p>
+                      {process.env.NODE_ENV === 'development' && (
+                        <button
+                          type="button"
+                          onClick={debugFile}
+                          className="text-xs text-blue-600 hover:underline mt-1"
+                        >
+                          Debug File Info
+                        </button>
+                      )}
                     </div>
                   </div>
                   {!loading && (
