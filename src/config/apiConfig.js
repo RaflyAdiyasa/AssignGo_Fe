@@ -3,7 +3,7 @@ import axios from 'axios';
 
 export const API_CONFIG = {
   USER_SERVICE: {
-    baseURL: 'http://localhost:5000',
+    baseURL: 'https://assigngo-user-424905547173.us-central1.run.app',
     endpoints: {
       login: '/api/auth/login',
       register: '/api/auth/register',
@@ -15,7 +15,7 @@ export const API_CONFIG = {
     }
   },
   MAIL_SERVICE: {
-    baseURL: 'http://localhost:5004',
+    baseURL: 'https://assigngo-mail-424905547173.us-central1.run.app',
     endpoints: {
       createMail: '/api/mails',
       getUserMails: '/api/mails/user',
