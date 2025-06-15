@@ -51,36 +51,103 @@ const AuthApp = () => {
     }
   };
 
-  const validateForm = () => {
-    const errors = {};
+// Debug function untuk mengecek username
+const debugUsername = (username) => {
+  console.log('=== DEBUG USERNAME ===');
+  console.log('Original value:', JSON.stringify(username));
+  console.log('Length:', username.length);
+  console.log('Trimmed value:', JSON.stringify(username.trim()));
+  console.log('Trimmed length:', username.trim().length);
+  
+  // Cek setiap karakter
+  for (let i = 0; i < username.length; i++) {
+    const char = username[i];
+    const charCode = char.charCodeAt(0);
+    console.log(`Character ${i}: "${char}" (ASCII: ${charCode})`);
+  }
+  
+  // Test regex
+  const regex = /^[a-zA-Z0-9_]+$/;
+  console.log('Regex test result:', regex.test(username));
+  console.log('Regex test on trimmed:', regex.test(username.trim()));
+};
 
-    // Validate NIM
-    const nimValidation = NIM_VALIDATION.validate(formData.nim);
-    if (!nimValidation.valid) {
-      errors.nim = nimValidation.message;
+// Perbaikan untuk validateForm
+const validateForm = () => {
+  const errors = {};
+
+  // Validate NIM
+  const nimValidation = NIM_VALIDATION.validate(formData.nim);
+  if (!nimValidation.valid) {
+    errors.nim = nimValidation.message;
+  }
+
+  // Validate password
+  if (!formData.password || formData.password.trim().length === 0) {
+    errors.password = 'Password wajib diisi';
+  } else if (formData.password.length < 6) {
+    errors.password = 'Password minimal 6 karakter';
+  }
+
+  // Validate username for registration
+  if (!isLoginMode) {
+    const username = formData.username;
+    
+    // Debug username (hapus ini setelah masalah terselesaikan)
+    if (username) {
+      debugUsername(username);
     }
-
-    // Validate password
-    if (!formData.password || formData.password.trim().length === 0) {
-      errors.password = 'Password wajib diisi';
-    } else if (formData.password.length < 6) {
-      errors.password = 'Password minimal 6 karakter';
+    
+    if (!username || username.trim().length === 0) {
+      errors.username = 'Username wajib diisi';
+    } else if (username.trim().length < 3) {
+      errors.username = 'Username minimal 3 karakter';
+    } else if (!/^[a-zA-Z0-9_]+$/.test(username.trim())) {
+      errors.username = 'Username hanya boleh berisi huruf, angka, dan underscore';
     }
+  }
 
-    // Validate username for registration
-    if (!isLoginMode) {
-      if (!formData.username || formData.username.trim().length === 0) {
-        errors.username = 'Username wajib diisi';
-      } else if (formData.username.length < 3) {
-        errors.username = 'Username minimal 3 karakter';
-      } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username)) {
-        errors.username = 'Username hanya boleh berisi huruf, angka, dan underscore';
-      }
-    }
+  setValidationErrors(errors);
+  return Object.keys(errors).length === 0;
+};
 
-    setValidationErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
+// Alternatif: Bersihkan input saat onChange
+const handleUsernameChange = (e) => {
+  const cleanValue = e.target.value.trim(); // Langsung trim saat input
+  setFormData(prev => ({
+    ...prev,
+    username: cleanValue
+  }));
+};
+
+// Atau bisa juga dengan validasi yang lebih ketat
+const validateUsername = (username) => {
+  if (!username) return { valid: false, message: 'Username wajib diisi' };
+  
+  const trimmed = username.trim();
+  
+  if (trimmed.length === 0) {
+    return { valid: false, message: 'Username wajib diisi' };
+  }
+  
+  if (trimmed.length < 3) {
+    return { valid: false, message: 'Username minimal 3 karakter' };
+  }
+  
+  if (trimmed.length > 20) {
+    return { valid: false, message: 'Username maksimal 20 karakter' };
+  }
+  
+  // Regex yang lebih spesifik
+  if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(trimmed)) {
+    return { 
+      valid: false, 
+      message: 'Username harus dimulai dengan huruf dan hanya boleh berisi huruf, angka, dan underscore' 
+    };
+  }
+  
+  return { valid: true };
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();

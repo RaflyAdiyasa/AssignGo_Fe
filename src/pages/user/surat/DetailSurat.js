@@ -1,4 +1,4 @@
-// src/pages/user/surat/DetailSurat.js - FIXED version
+// src/pages/user/surat/DetailSurat.js - Updated dengan alasan persetujuan
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -14,7 +14,10 @@ import {
   Download,
   RefreshCw,
   Upload,
-  X
+  X,
+  MessageSquare,
+  Award,
+  Info
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { suratApi } from '../../../services/api/suratApi';
@@ -278,43 +281,6 @@ const DetailSurat = () => {
               {/* File Upload Section */}
               <div>
                 <label className="block text-sm font-medium mb-1">File Surat</label>
-                
-                {/* Upload Error */}
-                {uploadError && (
-                  <div className="mb-3 bg-red-50 border border-red-200 rounded-lg p-3 flex items-center justify-between">
-                    <div className="flex items-center text-red-700">
-                      <AlertCircle className="w-4 h-4 mr-2" />
-                      <span className="text-sm">{uploadError}</span>
-                    </div>
-                    <button onClick={() => setUploadError(null)} className="text-red-500 hover:text-red-700">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
-
-                {/* File Upload Area */}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-gray-400 transition-colors">
-                  <input
-                    type="file"
-                    id="file-upload"
-                    accept=".pdf,.doc,.docx"
-                    onChange={handleFileUpload}
-                    disabled={uploading}
-                    className="hidden"
-                  />
-                  <label 
-                    htmlFor="file-upload" 
-                    className={`cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    <div className="flex flex-col items-center">
-                      <Upload className={`w-8 h-8 text-gray-400 mb-2 ${uploading ? 'animate-pulse' : ''}`} />
-                      <p className="text-sm text-gray-600 mb-1">
-                        {uploading ? 'Mengunggah...' : 'Klik untuk upload file surat'}
-                      </p>
-                      <p className="text-xs text-gray-500">PDF, DOC, DOCX (Max 10MB)</p>
-                    </div>
-                  </label>
-                </div>
 
                 {/* Current File Display */}
                 {surat.url_file_surat && (
@@ -345,7 +311,7 @@ const DetailSurat = () => {
             </div>
           </div>
 
-          {/* Status Terkini */}
+          {/* Status Terkini - Enhanced dengan alasan persetujuan */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h2 className="text-lg font-semibold mb-4">Status Terkini</h2>
             {latestHistory ? (
@@ -354,33 +320,55 @@ const DetailSurat = () => {
                   <StatusBadge status={latestHistory.status} size="lg" />
                   <span className="text-sm text-gray-500">{formatDateTime(latestHistory.tanggal_update)}</span>
                 </div>
-                {latestHistory.alasan && (
+                
+                {/* Alasan Penolakan */}
+                {latestHistory.alasan && latestHistory.status === 'ditolak' && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                     <div className="flex items-start space-x-3">
-                      <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                      <XCircle className="w-5 h-5 text-red-600 mt-0.5" />
                       <div>
-                        <h4 className="font-medium text-red-800">Alasan Penolakan</h4>
+                        <h4 className="font-medium text-red-800 mb-1">Alasan Penolakan</h4>
                         <p className="text-red-700">{latestHistory.alasan}</p>
                       </div>
                     </div>
                   </div>
                 )}
+                
+                {console.log(latestHistory.status)}
+                {console.log(latestHistory.alasan)}
+                {console.log(latestHistory)}
+                {latestHistory.alasan && latestHistory.status === 'disetujui' && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-start space-x-3">
+                      <Award className="w-5 h-5 text-green-600 mt-0.5" />
+                      <div>
+                        <h4 className="font-medium text-green-800 mb-1">Alasan Persetujuan</h4>
+                        <p className="text-green-700">{console.log(latestHistory.alasan)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Status Messages */}
                 {latestHistory.status === 'diproses' && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                     <div className="flex items-start space-x-3">
                       <Clock className="w-5 h-5 text-yellow-600 mt-0.5" />
                       <div>
-                        <p>Surat Anda sedang dalam proses review.</p>
+                        <h4 className="font-medium text-yellow-800 mb-1">Sedang Diproses</h4>
+                        <p className="text-yellow-700">Surat Anda sedang dalam proses review oleh admin.</p>
                       </div>
                     </div>
                   </div>
                 )}
-                {latestHistory.status === 'disetujui' && (
+                
+                {latestHistory.status === 'disetujui' && !latestHistory.alasan && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                     <div className="flex items-start space-x-3">
                       <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
                       <div>
-                        <p>Surat tugas Anda telah disetujui!</p>
+                        <h4 className="font-medium text-green-800 mb-1">Surat Disetujui</h4>
+                        <p className="text-green-700">Selamat! Surat tugas Anda telah disetujui oleh admin.</p>
                       </div>
                     </div>
                   </div>
@@ -393,6 +381,74 @@ const DetailSurat = () => {
               </div>
             )}
           </div>
+
+          {/* Feedback dan Komunikasi - NEW */}
+          {latestHistory?.alasan && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold mb-4 flex items-center">
+                <MessageSquare className="w-5 h-5 mr-2" />
+                Catatan dari Admin
+              </h2>
+              <div className="space-y-3">
+                <div className={`p-4 rounded-lg ${
+                  latestHistory.status === 'disetujui' 
+                    ? 'bg-green-50 border border-green-200'
+                    : 'bg-red-50 border border-red-200'
+                }`}>
+                  <div className="flex items-start space-x-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                      latestHistory.status === 'disetujui' 
+                        ? 'bg-green-100'
+                        : 'bg-red-100'
+                    }`}>
+                      {latestHistory.status === 'disetujui' ? (
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-red-600" />
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-900">
+                          Admin
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {formatDateTime(latestHistory.tanggal_update)}
+                        </span>
+                      </div>
+                      <p className={`text-sm ${
+                        latestHistory.status === 'disetujui' 
+                          ? 'text-green-800'
+                          : 'text-red-800'
+                      }`}>
+                        {latestHistory.alasan}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Tips berdasarkan status */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-start space-x-2">
+                    <Info className="w-4 h-4 text-blue-600 mt-0.5" />
+                    <div className="text-sm text-blue-800">
+                      {latestHistory.status === 'disetujui' ? (
+                        <p>
+                          <strong>Langkah selanjutnya:</strong> Anda dapat mendownload atau mencetak file surat tugas Anda. 
+                          Simpan catatan persetujuan ini untuk referensi di masa depan.
+                        </p>
+                      ) : (
+                        <p>
+                          <strong>Langkah selanjutnya:</strong> Perbaiki dokumen sesuai catatan admin dan ajukan kembali 
+                          surat tugas yang baru dengan perbaikan yang diminta.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sidebar Timeline */}
@@ -418,13 +474,32 @@ const DetailSurat = () => {
                   </button>
                 </>
               )}
-              <label 
-                htmlFor="file-upload" 
-                className={`w-full bg-green-600 text-white p-3 rounded-lg flex items-center justify-center space-x-2 hover:bg-green-700 cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <Upload className="w-4 h-4" />
-                <span>{uploading ? 'Mengunggah...' : 'Upload File Baru'}</span>
-              </label>
+              
+              {/* Conditional actions based on status */}
+              {latestStatus === 'disetujui' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-2 text-green-800">
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="text-sm font-medium">Surat Disetujui</span>
+                  </div>
+                  <p className="text-xs text-green-600 mt-1">
+                    Anda dapat menggunakan surat ini untuk keperluan resmi
+                  </p>
+                </div>
+              )}
+              
+              {latestStatus === 'ditolak' && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-2 text-red-800">
+                    <XCircle className="w-4 h-4" />
+                    <span className="text-sm font-medium">Surat Ditolak</span>
+                  </div>
+                  <p className="text-xs text-red-600 mt-1">
+                    Silakan perbaiki sesuai catatan admin
+                  </p>
+                </div>
+              )}
+              
               <button 
                 onClick={handleBack} 
                 className="w-full bg-gray-100 text-gray-700 p-3 rounded-lg flex items-center justify-center space-x-2 hover:bg-gray-200"
@@ -434,6 +509,7 @@ const DetailSurat = () => {
               </button>
             </div>
           </div>
+          
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold mb-4">Riwayat Status</h3>
             <StatusTimeline history={history} />

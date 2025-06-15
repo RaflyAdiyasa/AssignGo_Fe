@@ -1,4 +1,4 @@
-// src/pages/admin/AdminDashboard.js - Fixed version with robust data handling
+// src/pages/admin/AdminDashboard.js - Fixed version using latestStatus from backend like MailManagement
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
@@ -59,7 +59,7 @@ const AdminDashboard = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedSurat, setSelectedSurat] = useState(null);
 
-  // Helper function to safely extract array from API response
+  // Helper function to safely extract array from API response (same as MailManagement)
   const extractArrayFromResponse = (response, defaultArray = []) => {
     if (!response || !response.success) {
       return defaultArray;
@@ -90,7 +90,7 @@ const AdminDashboard = () => {
     return defaultArray;
   };
 
-  // Fetch dashboard data with user mapping
+  // Fetch dashboard data with user mapping - using same approach as MailManagement
   const fetchDashboardData = async (isRefresh = false) => {
     try {
       if (isRefresh) {
@@ -103,7 +103,7 @@ const AdminDashboard = () => {
 
       console.log('🔄 Starting dashboard data fetch...');
 
-      // Fetch data with safe API calls
+      // Fetch data with safe API calls - same as MailManagement
       const [suratResult, usersResult] = await Promise.all([
         safeApiCall(
           () => suratApi.getAllSurat(), 
@@ -135,7 +135,7 @@ const AdminDashboard = () => {
       }
       setErrors(newErrors);
 
-      // Process data even if some services failed - use the extraction helper
+      // Process data even if some services failed - use the extraction helper like MailManagement
       const allSurat = extractArrayFromResponse(suratResult, []);
       const allUsers = extractArrayFromResponse(usersResult, []);
 
@@ -144,7 +144,7 @@ const AdminDashboard = () => {
         usersCount: allUsers.length 
       });
 
-      // Create user map for quick lookup
+      // Create user map for quick lookup - same as MailManagement
       const userMap = {};
       allUsers.forEach(userData => {
         if (userData && userData.id) {
@@ -152,7 +152,9 @@ const AdminDashboard = () => {
         }
       });
 
-      // Map surat data with user information
+      console.log('👥 User map created with', Object.keys(userMap).length, 'users');
+
+      // Map surat data with user information - same as MailManagement
       const suratWithUserData = allSurat.map(surat => {
         if (!surat || !surat.id) {
           console.warn('Invalid surat data:', surat);
@@ -174,27 +176,19 @@ const AdminDashboard = () => {
         };
       }).filter(surat => surat !== null); // Remove null entries
 
-      // Calculate statistics safely
+      console.log('📋 Processed surat with user data:', suratWithUserData.length);
+
+      // Calculate statistics safely - using latestStatus from backend like MailManagement
       const totalSurat = suratWithUserData.length;
       const totalUsers = allUsers.length;
       
-      // Count status from latest history of each surat
+      // Count status using latestStatus from backend - same as MailManagement
       const suratStats = { diproses: 0, disetujui: 0, ditolak: 0 };
       
       suratWithUserData.forEach(surat => {
         try {
-          let latestStatus = 'diproses'; // default status
-          
-          if (surat.histories && Array.isArray(surat.histories) && surat.histories.length > 0) {
-            // Get the latest status (most recent history entry)
-            const latestHistory = surat.histories.sort((a, b) => {
-              const dateA = new Date(a.tanggal_update || a.updatedAt || a.created_at || '1970-01-01');
-              const dateB = new Date(b.tanggal_update || b.updatedAt || b.created_at || '1970-01-01');
-              return dateB - dateA;
-            })[0];
-            
-            latestStatus = latestHistory.status || 'diproses';
-          }
+          // Backend already provides latestStatus - same logic as MailManagement
+          const latestStatus = surat.latestStatus || 'diproses'; // default status
           
           if (suratStats.hasOwnProperty(latestStatus)) {
             suratStats[latestStatus]++;
@@ -202,13 +196,19 @@ const AdminDashboard = () => {
             suratStats.diproses++; // fallback for unknown status
           }
         } catch (error) {
-          console.warn('Error processing surat:', surat.id, error);
+          console.warn('Error processing surat stats:', surat.id, error);
           suratStats.diproses++; // fallback
         }
       });
 
       const pendingApprovals = suratStats.diproses;
       const approvalRate = totalSurat > 0 ? Math.round((suratStats.disetujui / totalSurat) * 100) : 0;
+
+      console.log('📊 Stats calculated:', { 
+        suratStats, 
+        pendingApprovals, 
+        approvalRate 
+      });
 
       // Get recent surat (last 5) safely
       const recentSurat = suratWithUserData
@@ -564,8 +564,8 @@ const AdminDashboard = () => {
               <div className="space-y-4">
                 {recentSurat.map((surat) => {
                   try {
-                    const latestHistory = surat.histories?.[0];
-                    const status = latestHistory?.status || 'diproses';
+                    // Use latestStatus from backend like MailManagement
+                    const status = surat.latestStatus || 'diproses';
                     
                     return (
                       <div
@@ -823,7 +823,7 @@ const AdminDashboard = () => {
                     Status
                   </label>
                   <div className="bg-gray-50 p-2 rounded">
-                    <StatusBadge status={selectedSurat.histories?.[0]?.status || 'diproses'} />
+                    <StatusBadge status={selectedSurat.latestStatus || 'diproses'} />
                   </div>
                 </div>
               </div>

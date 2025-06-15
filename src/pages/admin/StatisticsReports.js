@@ -1,4 +1,4 @@
-// src/pages/admin/StatisticsReports.js
+// src/pages/admin/StatisticsReports.js - Fixed to use backend latestStatus like MailManagement
 import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, 
@@ -59,7 +59,38 @@ const StatisticsReports = () => {
     approvalRateChange: 0
   });
 
-  // Fetch all statistics data
+  // Helper function to safely extract array from API response (same as MailManagement)
+  const extractArrayFromResponse = (response, defaultArray = []) => {
+    if (!response || !response.success) {
+      return defaultArray;
+    }
+    
+    const data = response.data;
+    
+    // If data is already an array
+    if (Array.isArray(data)) {
+      return data;
+    }
+    
+    // If data is an object with various possible array properties
+    if (data && typeof data === 'object') {
+      // Try common property names for arrays
+      const possibleArrayKeys = ['users', 'mails', 'data', 'items', 'results'];
+      
+      for (const key of possibleArrayKeys) {
+        if (Array.isArray(data[key])) {
+          return data[key];
+        }
+      }
+      
+      // If data is an object but not an array, return empty array
+      return defaultArray;
+    }
+    
+    return defaultArray;
+  };
+
+  // Fetch all statistics data - using same approach as MailManagement
   const fetchStatisticsData = async (isRefresh = false) => {
     try {
       if (isRefresh) {
@@ -69,29 +100,64 @@ const StatisticsReports = () => {
       }
       setError(null);
 
-      // Fetch data in parallel
-      const [suratResponse, usersResponse, statsResponse] = await Promise.all([
+      console.log('📊 Fetching all surat and users for statistics...');
+
+      // Fetch both surat and users data in parallel - same as MailManagement
+      const [suratResponse, usersResponse] = await Promise.all([
         suratApi.getAllSurat(),
-        userApi.getAllUsers(),
-        suratApi.getSuratStats()
+        userApi.getAllUsers()
       ]);
 
-      let allMails = [];
-      let allUsers = [];
+      console.log('📊 Raw responses:', { suratResponse, usersResponse });
 
-      if (suratResponse.success) {
-        allMails = suratResponse.data || [];
-      }
+      // Safely extract arrays from responses - same as MailManagement
+      const allMails = extractArrayFromResponse(suratResponse, []);
+      const allUsers = extractArrayFromResponse(usersResponse, []);
 
-      if (usersResponse.success) {
-        allUsers = usersResponse.data || [];
-      }
+      console.log('📊 Extracted data:', { 
+        mailsCount: allMails.length, 
+        usersCount: allUsers.length 
+      });
 
-      // Process statistics
-      await processStatistics(allMails, allUsers);
+      // Create user map for quick lookup - same as MailManagement
+      const userMap = {};
+      allUsers.forEach(userData => {
+        if (userData && userData.id) {
+          userMap[userData.id] = userData;
+        }
+      });
+
+      console.log('👥 User map created with', Object.keys(userMap).length, 'users');
+
+      // Map surat data with user information - same as MailManagement
+      const mailsWithUserData = allMails.map(mail => {
+        if (!mail || !mail.id) {
+          console.warn('Invalid mail data:', mail);
+          return null;
+        }
+
+        const userData = userMap[mail.id_pengirim];
+        return {
+          ...mail,
+          user: userData ? {
+            id: userData.id,
+            username: userData.username || 'Unknown User',
+            nim: userData.nim || 'N/A'
+          } : {
+            id: mail.id_pengirim || 'unknown',
+            username: 'Unknown User',
+            nim: 'N/A'
+          }
+        };
+      }).filter(mail => mail !== null); // Remove any null entries
+
+      console.log('📋 Processed mails with user data:', mailsWithUserData.length);
+
+      // Process statistics using the mapped data
+      await processStatistics(mailsWithUserData, allUsers);
 
     } catch (error) {
-      console.error('Fetch statistics error:', error);
+      console.error('❌ Fetch statistics error:', error);
       const errorResult = handleApiError(error);
       setError(errorResult.message);
     } finally {
@@ -100,25 +166,33 @@ const StatisticsReports = () => {
     }
   };
 
-  // Process all statistics
+  // Process all statistics - using latestStatus from backend like MailManagement
   const processStatistics = async (mails, users) => {
-    // Overview stats
     const totalUsers = users.length;
     const totalMails = mails.length;
     
-    // Status distribution
+    // Status distribution - use latestStatus from backend like MailManagement
     const statusDist = { diproses: 0, disetujui: 0, ditolak: 0 };
     const processedMails = [];
     
     mails.forEach(mail => {
-      const latestStatus = mail.histories?.[0]?.status || 'diproses';
-      if (statusDist.hasOwnProperty(latestStatus)) {
-        statusDist[latestStatus]++;
-      }
-      
-      // Collect processed mails for timing analysis
-      if (mail.histories && mail.histories.length > 1) {
-        processedMails.push(mail);
+      try {
+        // Backend already provides latestStatus - same logic as MailManagement
+        const latestStatus = mail.latestStatus || 'diproses'; // default status
+        
+        if (statusDist.hasOwnProperty(latestStatus)) {
+          statusDist[latestStatus]++;
+        } else {
+          statusDist.diproses++; // fallback for unknown status
+        }
+        
+        // Collect processed mails for timing analysis
+        if (latestStatus !== 'diproses') {
+          processedMails.push(mail);
+        }
+      } catch (error) {
+        console.warn('Error processing mail stats:', mail.id, error);
+        statusDist.diproses++; // fallback
       }
     });
 
@@ -130,10 +204,14 @@ const StatisticsReports = () => {
     let avgProcessingTime = 0;
     if (processedMails.length > 0) {
       const totalProcessingTime = processedMails.reduce((acc, mail) => {
-        const histories = mail.histories.sort((a, b) => new Date(a.tanggal_update) - new Date(b.tanggal_update));
-        const startTime = new Date(mail.tanggal_pengiriman);
-        const endTime = new Date(histories[histories.length - 1].tanggal_update);
-        return acc + (endTime - startTime);
+        try {
+          const startTime = new Date(mail.tanggal_pengiriman || mail.createdAt || '1970-01-01');
+          const endTime = new Date(mail.updatedAt || mail.tanggal_update || startTime);
+          const timeDiff = endTime - startTime;
+          return acc + Math.max(timeDiff, 0);
+        } catch (error) {
+          return acc;
+        }
       }, 0);
       avgProcessingTime = Math.round(totalProcessingTime / processedMails.length / (1000 * 60 * 60 * 24)); // days
     }
@@ -143,12 +221,20 @@ const StatisticsReports = () => {
       totalUsers,
       totalMails,
       approvalRate,
-      averageProcessingTime: avgProcessingTime,
+      averageProcessingTime: Math.max(avgProcessingTime, 0),
       pendingMails,
       completedMails
     });
 
     setStatusDistribution(statusDist);
+
+    console.log('📊 Stats calculated:', { 
+      statusDist, 
+      approvalRate, 
+      avgProcessingTime,
+      pendingMails,
+      completedMails 
+    });
 
     // Generate time series data
     generateTimeSeriesData(mails);
@@ -183,16 +269,21 @@ const StatisticsReports = () => {
       date.setDate(date.getDate() - i);
       
       const dayMails = mails.filter(mail => {
-        const mailDate = new Date(mail.tanggal_pengiriman);
-        return mailDate.toDateString() === date.toDateString();
+        try {
+          const mailDate = new Date(mail.tanggal_pengiriman || mail.createdAt || '1970-01-01');
+          return mailDate.toDateString() === date.toDateString();
+        } catch (error) {
+          return false;
+        }
       });
 
+      // Use latestStatus from backend like MailManagement
       timeData.push({
         date: formatDate(date),
         mails: dayMails.length,
-        approved: dayMails.filter(m => m.histories?.[0]?.status === 'disetujui').length,
-        rejected: dayMails.filter(m => m.histories?.[0]?.status === 'ditolak').length,
-        pending: dayMails.filter(m => (m.histories?.[0]?.status || 'diproses') === 'diproses').length
+        approved: dayMails.filter(m => (m.latestStatus || 'diproses') === 'disetujui').length,
+        rejected: dayMails.filter(m => (m.latestStatus || 'diproses') === 'ditolak').length,
+        pending: dayMails.filter(m => (m.latestStatus || 'diproses') === 'diproses').length
       });
     }
 
@@ -204,7 +295,7 @@ const StatisticsReports = () => {
     const userMailCounts = {};
     
     mails.forEach(mail => {
-      const userId = mail.user?.id || mail.user_id;
+      const userId = mail.user?.id || mail.id_pengirim;
       if (userId) {
         userMailCounts[userId] = (userMailCounts[userId] || 0) + 1;
       }
@@ -214,14 +305,21 @@ const StatisticsReports = () => {
       .sort(([,a], [,b]) => b - a)
       .slice(0, 5)
       .map(([userId, count]) => {
-        const user = users.find(u => u.id.toString() === userId.toString());
+        const user = users.find(u => u.id.toString() === userId.toString()) || 
+                    { username: 'Unknown', nim: 'N/A' };
+        
+        const userMails = mails.filter(m => 
+          (m.user?.id || m.id_pengirim).toString() === userId.toString()
+        );
+        
+        const approvedCount = userMails.filter(m => 
+          (m.latestStatus || 'diproses') === 'disetujui'
+        ).length;
+        
         return {
-          user: user || { username: 'Unknown', nim: 'N/A' },
+          user,
           mailCount: count,
-          approvedCount: mails.filter(m => 
-            (m.user?.id || m.user_id).toString() === userId.toString() && 
-            m.histories?.[0]?.status === 'disetujui'
-          ).length
+          approvedCount
         };
       });
 
@@ -232,24 +330,34 @@ const StatisticsReports = () => {
   const generateRecentActivity = (mails) => {
     const activities = [];
     
+    // Create activities based on mail status and update times
     mails.forEach(mail => {
-      if (mail.histories && mail.histories.length > 0) {
-        mail.histories.forEach(history => {
-          activities.push({
-            id: `${mail.id}-${history.id}`,
-            type: 'status_change',
-            mail: mail,
-            status: history.status,
-            date: history.tanggal_update,
-            user: mail.user
-          });
+      try {
+        const latestStatus = mail.latestStatus || 'diproses';
+        const updateDate = mail.updatedAt || mail.tanggal_update || mail.tanggal_pengiriman || mail.createdAt;
+        
+        activities.push({
+          id: `${mail.id}-${latestStatus}`,
+          type: 'status_change',
+          mail: mail,
+          status: latestStatus,
+          date: updateDate,
+          user: mail.user
         });
+      } catch (error) {
+        console.warn('Error processing activity:', error);
       }
     });
 
     // Sort by date and take recent 10
     const recentActivities = activities
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .sort((a, b) => {
+        try {
+          return new Date(b.date) - new Date(a.date);
+        } catch (error) {
+          return 0;
+        }
+      })
       .slice(0, 10);
 
     setRecentActivity(recentActivities);
@@ -597,7 +705,7 @@ const StatisticsReports = () => {
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-sm font-medium text-gray-900">
-                      Surat "{activity.mail.subject_surat}" 
+                      Surat "{activity.mail.subject_surat || 'Tanpa Subjek'}" 
                       <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
                         activity.status === 'disetujui' ? 'bg-green-100 text-green-800' :
                         activity.status === 'ditolak' ? 'bg-red-100 text-red-800' :
@@ -611,7 +719,7 @@ const StatisticsReports = () => {
                     </span>
                   </div>
                   <p className="text-sm text-gray-600">
-                    oleh {activity.user?.username} ({activity.user?.nim})
+                    oleh {activity.user?.username || 'Unknown User'} ({activity.user?.nim || 'N/A'})
                   </p>
                 </div>
               </div>

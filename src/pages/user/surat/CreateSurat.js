@@ -1,4 +1,4 @@
-// src/pages/user/surat/CreateSurat.js - Fixed version
+// src/pages/user/surat/CreateSurat.js - Complete Fixed Version
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -31,6 +31,7 @@ const CreateSurat = () => {
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState({ text: '', type: '' });
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // File upload progress
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -38,45 +39,9 @@ const CreateSurat = () => {
   // API Base URL
   const API_BASE_URL = 'https://assigngo-mail-424905547173.us-central1.run.app/api';
 
-  // Validation function
-  const validateForm = () => {
-    const newErrors = {};
-
-    // Subject validation
-    if (!formData.subject_surat.trim()) {
-      newErrors.subject_surat = 'Subject surat wajib diisi';
-    } else if (formData.subject_surat.trim().length < 5) {
-      newErrors.subject_surat = 'Subject minimal 5 karakter';
-    } else if (formData.subject_surat.trim().length > 200) {
-      newErrors.subject_surat = 'Subject maksimal 200 karakter';
-    }
-
-    // File validation
-    if (!selectedFile) {
-      newErrors.file = 'File surat wajib dipilih';
-    } else {
-      // File size validation (5MB)
-      if (selectedFile.size > 5 * 1024 * 1024) {
-        newErrors.file = 'Ukuran file tidak boleh lebih dari 5MB';
-      }
-      
-      // File type validation
-      const allowedTypes = [
-        'application/pdf', 
-        'application/msword', 
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'image/jpeg',
-        'image/png',
-        'image/jpg'
-      ];
-      
-      if (!allowedTypes.includes(selectedFile.type)) {
-        newErrors.file = 'Format file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG';
-      }
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  // Handle back button
+  const handleBack = () => {
+    navigate(-1);
   };
 
   // Handle input change
@@ -96,118 +61,409 @@ const CreateSurat = () => {
     }
   };
 
-  // Handle file selection
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      console.log('📎 File selected:', {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        lastModified: file.lastModified
-      });
-      
-      setSelectedFile(file);
-      
-      // Clear file error when file is selected
-      if (errors.file) {
-        setErrors(prev => ({
-          ...prev,
-          file: ''
-        }));
-      }
-    }
+  // Handle drag events
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
   };
 
-  // Remove selected file
-  const removeFile = () => {
-    setSelectedFile(null);
-    const fileInput = document.getElementById('file-input');
-    if (fileInput) {
-      fileInput.value = '';
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  // Format file size utility
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // 1. IMPROVED FILE HANDLING FUNCTIONS
+  const validateFile = (file) => {
+    console.log('🔍 Validating file:', file);
+    
+    if (!file) {
+      return { valid: false, message: 'File wajib dipilih' };
     }
     
-    // Clear any file-related errors
-    if (errors.file) {
-      setErrors(prev => ({
-        ...prev,
-        file: ''
-      }));
+    // Check if it's actually a File object - using safer method
+    if (!file || typeof file !== 'object' || !file.name || !file.size === undefined) {
+      console.error('❌ Not a File object:', file);
+      return { valid: false, message: 'Object bukan File yang valid' };
     }
+    
+    // Additional check for File-like properties
+    if (!file.name || typeof file.size !== 'number' || !file.type) {
+      console.error('❌ Missing File properties:', file);
+      return { valid: false, message: 'File tidak memiliki properti yang valid' };
+    }
+    
+    // Check file size (5MB = 5 * 1024 * 1024 bytes)
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      return { valid: false, message: 'File terlalu besar. Maksimal 5MB' };
+    }
+    
+    if (file.size === 0) {
+      return { valid: false, message: 'File kosong atau rusak' };
+    }
+    
+    // Check file type
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/jpg', 
+      'image/png'
+    ];
+    
+    if (!allowedTypes.includes(file.type)) {
+      console.error('❌ Invalid file type:', file.type);
+      return { 
+        valid: false, 
+        message: 'Format file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG' 
+      };
+    }
+    
+    console.log('✅ File validation passed');
+    return { valid: true };
   };
 
-  // API call function
+  // 2. IMPROVED FILE CHANGE HANDLER
+  const handleFileChange = (e) => {
+    console.log('📁 File input changed');
+    
+    const file = e.target.files[0];
+    if (!file) {
+      console.log('❌ No file selected');
+      return;
+    }
+    
+    console.log('📎 File selected:', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified,
+      constructor: file.constructor?.name || 'unknown',
+      isFileType: file.constructor?.name === 'File' || file.toString() === '[object File]',
+      hasFileProperties: !!(file.name && typeof file.size === 'number' && file.type)
+    });
+    
+    // Validate file immediately
+    const validation = validateFile(file);
+    if (!validation.valid) {
+      setErrors(prev => ({ ...prev, file: validation.message }));
+      setSelectedFile(null);
+      return;
+    }
+    
+    // Clear errors and set file
+    setErrors(prev => ({ ...prev, file: '' }));
+    setSelectedFile(file);
+    
+    console.log('✅ File set successfully in state');
+  };
+
+  // 3. IMPROVED DRAG AND DROP HANDLER
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    console.log('📁 File dropped');
+    
+    const files = Array.from(e.dataTransfer.files);
+    const file = files[0];
+    
+    if (!file) {
+      console.log('❌ No file in drop event');
+      return;
+    }
+    
+    console.log('📎 File dropped:', {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      constructor: file.constructor?.name || 'unknown',
+      isFileType: file.constructor?.name === 'File' || file.toString() === '[object File]',
+      hasFileProperties: !!(file.name && typeof file.size === 'number' && file.type)
+    });
+    
+    // Validate file
+    const validation = validateFile(file);
+    if (!validation.valid) {
+      setErrors(prev => ({ ...prev, file: validation.message }));
+      setSelectedFile(null);
+      return;
+    }
+    
+    // Clear errors and set file
+    setErrors(prev => ({ ...prev, file: '' }));
+    setSelectedFile(file);
+    
+    console.log('✅ Dropped file set successfully in state');
+  };
+
+  // 4. COMPREHENSIVE DEBUG FUNCTION
+  const debugFileUpload = (file, formData = null) => {
+    console.log('=== COMPREHENSIVE FILE DEBUG ===');
+    
+    // Debug file object
+    if (file) {
+      console.log('📁 File Object Analysis:');
+      console.log('  - Name:', file.name);
+      console.log('  - Size:', file.size);
+      console.log('  - Type:', file.type);
+      console.log('  - LastModified:', file.lastModified);
+      console.log('  - Constructor:', file.constructor?.name || 'unknown');
+      console.log('  - Is File-like:', !!(file.name && typeof file.size === 'number' && file.type));
+      console.log('  - toString():', file.toString());
+      console.log('  - Has stream method:', typeof file.stream === 'function');
+      console.log('  - Has arrayBuffer method:', typeof file.arrayBuffer === 'function');
+      
+      // Test file reading capabilities
+      try {
+        const fileReader = new FileReader();
+        fileReader.onload = () => {
+          console.log('  - FileReader test: SUCCESS');
+        };
+        fileReader.onerror = () => {
+          console.log('  - FileReader test: FAILED');
+        };
+        fileReader.readAsArrayBuffer(file.slice(0, 100)); // Test with small chunk
+      } catch (error) {
+        console.log('  - FileReader test: ERROR -', error.message);
+      }
+    } else {
+      console.log('❌ No file provided to debug');
+    }
+    
+    // Debug FormData if provided
+    if (formData) {
+      console.log('📦 FormData Analysis:');
+      console.log('  - Has entries method:', typeof formData.entries === 'function');
+      console.log('  - Has file_surat field:', formData.has('file_surat'));
+      
+      try {
+        for (let [key, value] of formData.entries()) {
+          if (value && typeof value === 'object' && value.name && typeof value.size === 'number') {
+            console.log(`  - ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+          } else {
+            console.log(`  - ${key}: ${value}`);
+          }
+        }
+      } catch (error) {
+        console.log('  - FormData iteration error:', error.message);
+      }
+    }
+    
+    console.log('=== END DEBUG ===');
+  };
+
+  // 5. IMPROVED API CALL FUNCTION
   const createSuratAPI = async (subjectSurat, file) => {
-    // Try existing suratApi first
+    console.log('🚀 Starting API call...');
+    console.log('📋 Subject:', subjectSurat);
+    console.log('📎 File before API call:', file ? {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      isFileType: file.constructor?.name === 'File' || file.toString() === '[object File]',
+      hasFileProperties: !!(file.name && typeof file.size === 'number' && file.type)
+    } : 'NO FILE');
+    
+    // Final file validation before API call - using safer checks
+    if (!file) {
+      throw new Error('File tidak ditemukan saat akan dikirim ke API');
+    }
+    
+    // Check if file has required properties instead of instanceof
+    if (!file.name || typeof file.size !== 'number' || !file.type) {
+      throw new Error('Object bukan File yang valid saat akan dikirim ke API');
+    }
+    
+    if (file.size === 0) {
+      throw new Error('File kosong atau rusak saat akan dikirim ke API');
+    }
+    
+    // Debug file before creating FormData
+    debugFileUpload(file);
+    
     try {
-      console.log('🔄 Trying existing suratApi.createSurat...');
+      // Try using existing suratApi first
+      console.log('🔄 Attempting suratApi.createSurat...');
+      
       const result = await suratApi.createSurat({
-        subject_surat: subjectSurat
+        subject_surat: subjectSurat.trim()
       }, file);
+      
+      console.log('✅ suratApi.createSurat succeeded:', result);
       return result;
+      
     } catch (apiError) {
-      console.log('⚠️ suratApi failed, falling back to direct API call...');
-      console.log('API Error:', apiError);
+      console.log('⚠️ suratApi failed, trying fallback approach...');
+      console.error('API Error details:', apiError);
       
-      // Fallback to direct API call
+      // Fallback to direct fetch API dengan debugging ekstra
       const token = getToken();
-      
       if (!token) {
         throw new Error('Token tidak ditemukan. Silakan login ulang.');
       }
-
-      // Create FormData according to backend format
+      
+      // Create FormData with extra care dan berbagai field name untuk test
       const formDataPayload = new FormData();
-      formDataPayload.append('subject_surat', subjectSurat);
+      
+      // Add subject
+      formDataPayload.append('subject_surat', subjectSurat.trim());
+      
+      // Try multiple field names for compatibility
       formDataPayload.append('file_surat', file, file.name);
-
-      // Debug FormData
-      console.log('📦 FormData being sent (fallback):');
+      formDataPayload.append('file', file, file.name); // Alternative field name
+      formDataPayload.append('upload', file, file.name); // Another alternative
+      
+      // Debug FormData after creation
+      debugFileUpload(file, formDataPayload);
+      
+      // Verify FormData contents
+      console.log('📦 Final FormData verification:');
+      let hasFile = false;
+      let hasSubject = false;
+      
       for (let [key, value] of formDataPayload.entries()) {
-        if (value instanceof File) {
-          console.log(key + ': File(' + value.name + ', ' + value.size + ' bytes, ' + value.type + ')');
-        } else {
-          console.log(key + ': ' + value);
-        }
+        console.log(`  - ${key}:`, value && typeof value === 'object' && value.name ? `File(${value.name})` : value);
+        if ((key === 'file_surat' || key === 'file' || key === 'upload') && value && value.name && typeof value.size === 'number') hasFile = true;
+        if (key === 'subject_surat') hasSubject = true;
       }
-
-      // Send request to backend
+      
+      console.log('  - Has valid file:', hasFile);
+      console.log('  - Has valid subject:', hasSubject);
+      
+      if (!hasFile) {
+        throw new Error('File tidak berhasil ditambahkan ke FormData');
+      }
+      
+      if (!hasSubject) {
+        throw new Error('Subject tidak berhasil ditambahkan ke FormData');
+      }
+      
+      // Make API request
+      console.log('📡 Making fetch request to:', API_BASE_URL + '/mails');
+      
       const response = await fetch(API_BASE_URL + '/mails', {
         method: 'POST',
         headers: {
           'Authorization': 'Bearer ' + token,
+          // DO NOT set Content-Type for multipart/form-data - let browser handle it
         },
         body: formDataPayload
       });
-
+      
       console.log('📡 Response status:', response.status);
-
+      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+      
       // Parse response
-      const result = await response.json();
-      console.log('📡 Response data:', result);
-
-      if (!response.ok) {
-        throw new Error(result.message || result.error || 'HTTP ' + response.status + ': ' + response.statusText);
+      let result;
+      try {
+        result = await response.json();
+        console.log('📡 Response data:', result);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        const textResponse = await response.text();
+        console.log('📡 Raw response:', textResponse);
+        throw new Error('Server returned invalid JSON response');
       }
-
+      
+      if (!response.ok) {
+        console.error('❌ API request failed with status:', response.status);
+        throw new Error(result?.message || result?.error || `HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       return result;
     }
   };
 
-  // Handle form submit
+  // 6. IMPROVED FORM VALIDATION
+  const validateForm = () => {
+    console.log('🔍 Validating form...');
+    console.log('📋 Current formData:', formData);
+    console.log('📎 Current selectedFile:', selectedFile);
+    
+    const newErrors = {};
+
+    // Subject validation
+    if (!formData.subject_surat?.trim()) {
+      newErrors.subject_surat = 'Subject surat wajib diisi';
+    } else if (formData.subject_surat.trim().length < 5) {
+      newErrors.subject_surat = 'Subject minimal 5 karakter';
+    } else if (formData.subject_surat.trim().length > 200) {
+      newErrors.subject_surat = 'Subject maksimal 200 karakter';
+    }
+
+    // File validation
+    if (!selectedFile) {
+      newErrors.file = 'File surat wajib dipilih';
+    } else {
+      const fileValidation = validateFile(selectedFile);
+      if (!fileValidation.valid) {
+        newErrors.file = fileValidation.message;
+      }
+    }
+
+    console.log('🔍 Validation errors:', newErrors);
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // 7. IMPROVED SUBMIT HANDLER
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    console.log('📝 Submitting surat form...');
+    console.log('📝 Form submitted');
+    console.log('📋 Form data at submit:', formData);
+    console.log('📎 Selected file at submit:', selectedFile);
     
+    // Validate form
     if (!validateForm()) {
+      console.log('❌ Form validation failed');
       setMessage({ 
         text: 'Silakan perbaiki kesalahan pada form', 
         type: 'error' 
       });
       return;
     }
-
+    
+    // Double-check file exists and is valid - using safer checks
+    if (!selectedFile) {
+      console.error('❌ No file selected at submit time');
+      setMessage({ 
+        text: 'File tidak ditemukan. Silakan pilih file lagi.', 
+        type: 'error' 
+      });
+      return;
+    }
+    
+    // Check if file has required properties instead of instanceof
+    if (!selectedFile.name || typeof selectedFile.size !== 'number' || !selectedFile.type) {
+      console.error('❌ Selected file is not valid:', selectedFile);
+      setMessage({ 
+        text: 'File tidak valid. Silakan pilih file lagi.', 
+        type: 'error' 
+      });
+      return;
+    }
+    
     setLoading(true);
     setUploading(true);
     setUploadProgress(0);
@@ -215,23 +471,16 @@ const CreateSurat = () => {
 
     try {
       const userId = getUserId();
-      if (!userId) {
-        console.warn('⚠️ User ID tidak ditemukan, melanjutkan tanpa userId...');
-      }
-
       console.log('👤 User ID:', userId);
-      console.log('📋 Form data:', formData);
-      console.log('📎 Selected file:', {
-        name: selectedFile.name,
-        size: selectedFile.size,
-        type: selectedFile.type
-      });
-
-      // Validate file
-      if (!selectedFile || selectedFile.size === 0) {
-        throw new Error('File tidak valid atau kosong');
-      }
-
+      
+      // Final debug before API call
+      console.log('🔍 Final pre-API debug:');
+      console.log('  - Subject:', formData.subject_surat);
+      console.log('  - File name:', selectedFile.name);
+      console.log('  - File size:', selectedFile.size);
+      console.log('  - File type:', selectedFile.type);
+      console.log('  - File instanceof File:', selectedFile.constructor?.name === 'File');
+      
       // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
@@ -240,26 +489,32 @@ const CreateSurat = () => {
         });
       }, 200);
 
-      // Call API
-      console.log('🚀 Calling backend API...');
+      // Call API with current file reference
+      console.log('🚀 Calling API...');
       const result = await createSuratAPI(formData.subject_surat.trim(), selectedFile);
 
       clearInterval(progressInterval);
       setUploadProgress(100);
 
-      console.log('✅ API Response:', result);
+      console.log('✅ API call completed:', result);
 
-      // Check if request was successful
-      if (result && (result.success === true || result.status === 'success' || result.message?.includes('berhasil') || result.message?.includes('successfully') || result.mail)) {
+      // Check success conditions
+      const isSuccess = result && (
+        result.success === true || 
+        result.status === 'success' || 
+        result.message?.includes('berhasil') || 
+        result.message?.includes('successfully') || 
+        result.mail
+      );
+      
+      if (isSuccess) {
         setMessage({ 
           text: 'Surat berhasil diajukan! Anda akan diarahkan ke halaman surat.', 
           type: 'success' 
         });
 
         // Reset form
-        setFormData({
-          subject_surat: ''
-        });
+        setFormData({ subject_surat: '' });
         setSelectedFile(null);
         const fileInput = document.getElementById('file-input');
         if (fileInput) {
@@ -275,47 +530,32 @@ const CreateSurat = () => {
       }
 
     } catch (error) {
-      console.error('❌ Create surat error:', error);
+      console.error('❌ Submit error:', error);
       
       setUploadProgress(0);
       
-      // Use existing handleApiError
-      const errorResult = handleApiError(error);
-      let errorMessage = errorResult.message;
+      // Handle specific error messages
+      let errorMessage = 'Gagal mengajukan surat';
       
-      // Handle specific error cases
-      if (error.response) {
-        const status = error.response.status;
-        const data = error.response.data;
-        
-        console.log('📊 Error response data:', data);
-        
-        if (status === 413) {
-          errorMessage = 'File terlalu besar. Maksimal 5MB.';
-        } else if (status === 415) {
-          errorMessage = 'Format file tidak didukung.';
-        } else if (status === 400) {
-          if (data?.message?.includes('no file') || data?.error?.includes('no file')) {
-            errorMessage = 'File tidak terdeteksi. Pastikan file telah dipilih dengan benar.';
-          } else {
-            errorMessage = data?.message || data?.error || 'Data tidak valid. Periksa form Anda.';
-          }
-        } else if (status === 401) {
-          errorMessage = 'Sesi Anda telah berakhir. Silakan login ulang.';
-        } else if (status === 500) {
-          errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
+      if (error.message?.includes('No file uploaded') || error.message?.includes('no file')) {
+        errorMessage = 'File tidak terdeteksi di server. Pastikan file telah dipilih dengan benar dan coba lagi.';
+        // Reset file selection to force re-selection
+        setSelectedFile(null);
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+          fileInput.value = '';
         }
-      } else if (error.code === 'NETWORK_ERROR') {
-        errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
-      } else if (error.message?.includes('Failed to fetch')) {
-        errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
       } else if (error.message?.includes('Token tidak ditemukan')) {
         errorMessage = 'Sesi berakhir. Silakan login ulang.';
-        setTimeout(() => {
-          navigate('/login');
-        }, 2000);
-      } else if (error.message?.includes('no file') || error.message?.includes('File tidak valid')) {
-        errorMessage = 'File tidak terdeteksi. Silakan pilih file lagi.';
+        setTimeout(() => navigate('/login'), 2000);
+      } else if (error.message?.includes('File terlalu besar')) {
+        errorMessage = 'File terlalu besar. Maksimal 5MB.';
+      } else if (error.message?.includes('Format file')) {
+        errorMessage = 'Format file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG.';
+      } else if (error.message?.includes('Failed to fetch')) {
+        errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
+      } else {
+        errorMessage = error.message || 'Terjadi kesalahan tidak terduga';
       }
       
       setMessage({ 
@@ -328,74 +568,52 @@ const CreateSurat = () => {
     }
   };
 
-  // Handle back button
-  const handleBack = () => {
-    navigate(-1);
-  };
-
-  // Handle drag and drop
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDragEnter = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      const file = files[0];
-      console.log('📎 File dropped:', {
-        name: file.name,
-        size: file.size,
-        type: file.type
-      });
+  // 8. ENHANCED DEBUG FUNCTION FOR DEVELOPMENT
+  const debugFile = () => {
+    if (selectedFile) {
+      console.log('🔍 === MANUAL FILE DEBUG ===');
+      debugFileUpload(selectedFile);
       
-      setSelectedFile(file);
+      // Test FormData creation
+      const testFormData = new FormData();
+      testFormData.append('file_surat', selectedFile, selectedFile.name);
+      testFormData.append('subject_surat', 'test subject');
       
-      // Clear file error when file is dropped
-      if (errors.file) {
-        setErrors(prev => ({
-          ...prev,
-          file: ''
-        }));
+      console.log('🧪 Test FormData creation:');
+      debugFileUpload(selectedFile, testFormData);
+      
+      // Test file reading
+      if (selectedFile.size > 0) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          console.log('✅ File readable - first 100 chars:', 
+            reader.result.toString().substring(0, 100));
+        };
+        reader.onerror = () => {
+          console.error('❌ File not readable');
+        };
+        reader.readAsText(selectedFile.slice(0, 100));
       }
+    } else {
+      console.log('❌ No file selected to debug');
     }
   };
 
-  // Format file size
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  // Debug function for development
-  const debugFile = () => {
-    if (selectedFile) {
-      console.log('🔍 Debug selected file:', {
-        name: selectedFile.name,
-        size: selectedFile.size,
-        type: selectedFile.type,
-        lastModified: selectedFile.lastModified,
-        lastModifiedDate: selectedFile.lastModifiedDate,
-        constructor: selectedFile.constructor.name,
-        isFile: selectedFile instanceof File,
-        isBlob: selectedFile instanceof Blob
-      });
+  // 9. REMOVE FILE FUNCTION
+  const removeFile = () => {
+    console.log('🗑️ Removing file');
+    setSelectedFile(null);
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+    
+    // Clear any file-related errors
+    if (errors.file) {
+      setErrors(prev => ({
+        ...prev,
+        file: ''
+      }));
     }
   };
 
@@ -511,7 +729,11 @@ const CreateSurat = () => {
             {!selectedFile ? (
               <div 
                 className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-                  errors.file ? 'border-red-300 bg-red-50' : 'border-gray-300 hover:border-gray-400'
+                  errors.file 
+                    ? 'border-red-300 bg-red-50' 
+                    : isDragOver 
+                      ? 'border-blue-400 bg-blue-50' 
+                      : 'border-gray-300 hover:border-gray-400'
                 }`}
                 onDragOver={handleDragOver}
                 onDragEnter={handleDragEnter}

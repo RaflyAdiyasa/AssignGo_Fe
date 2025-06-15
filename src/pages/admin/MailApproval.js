@@ -1,4 +1,4 @@
-// src/pages/admin/MailApproval.js - Fixed data parsing and status handling
+// src/pages/admin/MailApproval.js - Updated dengan alasan persetujuan
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
@@ -46,7 +46,7 @@ const MailApproval = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedMail, setSelectedMail] = useState(null);
   const [approvalAction, setApprovalAction] = useState(''); // 'approve' or 'reject'
-  const [rejectionReason, setRejectionReason] = useState('');
+  const [approvalReason, setApprovalReason] = useState(''); // Changed: unified reason field
   
   // Success message
   const [successMessage, setSuccessMessage] = useState('');
@@ -240,11 +240,23 @@ const MailApproval = () => {
   const handleApprovalAction = async () => {
     if (!selectedMail || !approvalAction) return;
     
+    // Validation: approval requires reason, rejection requires reason
+    if (approvalAction === 'approve' && !approvalReason.trim()) {
+      setError('Alasan persetujuan wajib diisi');
+      return;
+    }
+    
+    if (approvalAction === 'reject' && !approvalReason.trim()) {
+      setError('Alasan penolakan wajib diisi');
+      return;
+    }
+    
     try {
       setProcessing(true);
+      setError(null);
       
       const status = approvalAction === 'approve' ? SURAT_STATUS.DISETUJUI : SURAT_STATUS.DITOLAK;
-      const reason = approvalAction === 'reject' ? rejectionReason : null;
+      const reason = approvalReason.trim();
       
       console.log('🔄 Updating mail status:', { 
         mailId: selectedMail.id, 
@@ -258,7 +270,7 @@ const MailApproval = () => {
         setShowApprovalModal(false);
         setSelectedMail(null);
         setApprovalAction('');
-        setRejectionReason('');
+        setApprovalReason('');
         
         // Show success message
         setSuccessMessage(
@@ -286,41 +298,12 @@ const MailApproval = () => {
     }
   };
 
-  // Handle quick approve
-  const handleQuickApprove = async (mail) => {
-    try {
-      setProcessing(true);
-      
-      console.log('🚀 Quick approving mail:', mail.id);
-      
-      const response = await suratApi.updateSuratStatus(mail.id, SURAT_STATUS.DISETUJUI);
-      
-      if (response.success) {
-        setSuccessMessage(`Surat "${mail.subject_surat}" berhasil disetujui`);
-        
-        // Force refresh data
-        console.log('✅ Quick approval successful, refreshing data...');
-        await fetchPendingMails(true);
-        
-        setTimeout(() => setSuccessMessage(''), 5000);
-      } else {
-        throw new Error(response.message || 'Failed to approve');
-      }
-    } catch (error) {
-      console.error('❌ Quick approve error:', error);
-      const errorResult = handleApiError(error);
-      setError(errorResult.message);
-      setTimeout(() => setError(null), 10000);
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   // Handle open approval modal
   const handleOpenApprovalModal = (mail, action) => {
     setSelectedMail(mail);
     setApprovalAction(action);
-    setRejectionReason('');
+    setApprovalReason('');
+    setError(null);
     setShowApprovalModal(true);
   };
 
@@ -557,7 +540,7 @@ const MailApproval = () => {
                     </button>
                     
                     <button
-                      onClick={() => handleQuickApprove(mail)}
+                      onClick={() => handleOpenApprovalModal(mail, 'approve')}
                       disabled={processing}
                       className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-1 disabled:opacity-50"
                     >
@@ -572,7 +555,7 @@ const MailApproval = () => {
         )}
       </div>
 
-      {/* Approval Modal */}
+      {/* Approval Modal - Updated dengan unified reason field */}
       {showApprovalModal && selectedMail && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -588,28 +571,36 @@ const MailApproval = () => {
               </p>
             </div>
             
-            {approvalAction === 'reject' && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Alasan Penolakan *
-                </label>
-                <textarea
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="Jelaskan alasan penolakan surat ini..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                  rows="4"
-                  required
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Alasan ini akan dikirimkan kepada pengguna
-                </p>
-              </div>
-            )}
+            {/* Unified reason field for both approve and reject */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {approvalAction === 'approve' ? 'Alasan Persetujuan *' : 'Alasan Penolakan *'}
+              </label>
+              <textarea
+                value={approvalReason}
+                onChange={(e) => setApprovalReason(e.target.value)}
+                placeholder={approvalAction === 'approve' 
+                  ? "Jelaskan alasan persetujuan (misal: Dokumen lengkap dan sesuai prosedur)"
+                  : "Jelaskan alasan penolakan surat ini..."
+                }
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows="4"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {approvalAction === 'approve' 
+                  ? 'Alasan persetujuan akan dikirimkan kepada pengguna'
+                  : 'Alasan penolakan akan dikirimkan kepada pengguna'
+                }
+              </p>
+            </div>
             
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => setShowApprovalModal(false)}
+                onClick={() => {
+                  setShowApprovalModal(false);
+                  setError(null);
+                }}
                 disabled={processing}
                 className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50"
               >
@@ -617,7 +608,7 @@ const MailApproval = () => {
               </button>
               <button
                 onClick={handleApprovalAction}
-                disabled={processing || (approvalAction === 'reject' && !rejectionReason.trim())}
+                disabled={processing || !approvalReason.trim()}
                 className={`px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-1 ${
                   approvalAction === 'approve'
                     ? 'bg-green-600 hover:bg-green-700 text-white'
@@ -744,7 +735,7 @@ const MailApproval = () => {
                 <button
                   onClick={() => {
                     setShowDetailModal(false);
-                    handleQuickApprove(selectedMail);
+                    handleOpenApprovalModal(selectedMail, 'approve');
                   }}
                   className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center space-x-1"
                 >

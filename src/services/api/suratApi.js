@@ -1,8 +1,8 @@
-// src/services/api/suratApi.js - Fixed to match backend response format
+// src/services/api/suratApi.js - Fixed to match backend multer exactly
 import { mailApiClient, API_CONFIG } from '../../config/apiConfig';
 
 export const suratApi = {
-  // User functions - create surat dengan file upload
+  // User functions - create surat dengan file upload - FIXED VERSION
   createSurat: async (suratData, file) => {
     try {
       console.log('📤 Creating surat with data:', suratData);
@@ -12,85 +12,85 @@ export const suratApi = {
         throw new Error('File surat wajib dipilih');
       }
 
-      // Create FormData for multipart upload
+      // Create FormData for multipart upload - EXACTLY as backend expects
       const formData = new FormData();
       
-      // Append surat data - sesuai dengan backend expectation
+      // Append data in the exact order backend expects
       if (suratData.subject_surat) {
         formData.append('subject_surat', suratData.subject_surat);
       }
       
-      // Append file dengan nama yang benar sesuai backend
-      formData.append('file_surat', file);
+      // CRITICAL: Append file with exact field name that multer expects
+      formData.append('file_surat', file, file.name);
 
       // Debug FormData contents
       console.log('📦 FormData being sent:');
       for (let [key, value] of formData.entries()) {
-        console.log(`  ${key}:`, value instanceof File ? `File(${value.name})` : value);
+        console.log(`  ${key}:`, value.name ? `File(${value.name})` : value);
       }
 
-      const response = await mailApiClient.post(
-        API_CONFIG.MAIL_SERVICE.endpoints.createMail,
-        formData,
+      // Use direct fetch instead of axios to avoid any axios processing
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No access token found');
+      }
+
+      console.log('📡 Making direct fetch request...');
+      const response = await fetch(
+        `${API_CONFIG.MAIL_SERVICE.baseURL}${API_CONFIG.MAIL_SERVICE.endpoints.createMail}`,
         {
+          method: 'POST',
           headers: {
-            // Don't set Content-Type manually - let axios handle multipart boundary
+            'Authorization': `Bearer ${token}`,
+            // CRITICAL: Do NOT set Content-Type - let browser handle multipart boundary
           },
-          timeout: 30000, // 30 second timeout for file uploads
+          body: formData
         }
       );
 
-      console.log('✅ Create surat response:', response);
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
 
-      // Handle backend response format: { message, mail }
-      if (response.data) {
+      // Parse response
+      let result;
+      try {
+        result = await response.json();
+        console.log('✅ Create surat response:', result);
+      } catch (parseError) {
+        const textResponse = await response.text();
+        console.error('❌ Failed to parse JSON, raw response:', textResponse);
+        throw new Error('Invalid JSON response from server');
+      }
+
+      // Handle response based on backend format
+      if (response.ok) {
+        // Backend returns: { message, mail }
         return {
           success: true,
-          data: response.data.mail || response.data,
-          message: response.data.message || 'Surat berhasil diajukan'
+          data: result.mail || result,
+          message: result.message || 'Surat berhasil diajukan'
         };
       } else {
-        return {
-          success: false,
-          message: 'No response data received'
-        };
+        // Handle error response
+        throw new Error(result.message || result.error || `HTTP ${response.status}: ${response.statusText}`);
       }
+
     } catch (error) {
       console.error('❌ CreateSurat API Error:', error);
       
       // Enhanced error handling
       let errorMessage = 'Gagal mengajukan surat';
       
-      if (error.response) {
-        const status = error.response.status;
-        const data = error.response.data;
-        
-        switch (status) {
-          case 400:
-            errorMessage = data.message || 'Data tidak valid. Periksa form Anda.';
-            break;
-          case 401:
-            errorMessage = 'Sesi Anda telah berakhir. Silakan login ulang.';
-            break;
-          case 413:
-            errorMessage = 'File terlalu besar. Maksimal 5MB.';
-            break;
-          case 415:
-            errorMessage = 'Format file tidak didukung. Gunakan PDF, DOC, DOCX, JPG, atau PNG.';
-            break;
-          case 422:
-            errorMessage = data.message || 'Data tidak memenuhi syarat.';
-            break;
-          case 500:
-            errorMessage = 'Terjadi kesalahan server. Coba lagi nanti.';
-            break;
-          default:
-            errorMessage = data.message || `Error ${status}: ${error.response.statusText}`;
-        }
-      } else if (error.request) {
+      if (error.message?.includes('No access token')) {
+        errorMessage = 'Sesi berakhir. Silakan login ulang.';
+      } else if (error.message?.includes('No file uploaded')) {
+        errorMessage = 'File tidak terdeteksi oleh server. Coba pilih file lagi.';
+      } else if (error.message?.includes('File upload error')) {
+        errorMessage = 'Error saat upload file. Periksa ukuran dan format file.';
+      } else if (error.message?.includes('Failed to fetch')) {
         errorMessage = 'Koneksi bermasalah. Periksa koneksi internet Anda.';
-      } else {
-        errorMessage = error.message || 'Terjadi kesalahan tidak terduga.';
+      } else if (error.message) {
+        errorMessage = error.message;
       }
 
       return {
@@ -314,7 +314,7 @@ export const suratApi = {
     }
   },
 
-  // Update surat status (admin only) - FIXED to use correct endpoint
+  // Update surat status (admin only) - FIXED to ensure reason is always sent
   updateSuratStatus: async (mailId, status, alasan = null) => {
     try {
       console.log('🔄 Updating surat status:', { mailId, status, alasan });
@@ -327,23 +327,46 @@ export const suratApi = {
         throw new Error('Status is required');
       }
       
-      const payload = { status };
-      if (alasan) {
-        payload.alasan = alasan;
+      // FIXED: Always include alasan in payload, even if it's an empty string
+      const payload = { 
+        status: status.toString().trim()
+      };
+      
+      // Always include alasan, even for approve action
+      if (alasan !== null && alasan !== undefined) {
+        payload.alasan = alasan.toString().trim();
+      } else {
+        // Set empty string if no reason provided (shouldn't happen with new validation)
+        payload.alasan = '';
       }
       
-      console.log('📤 Sending payload:', payload);
+      console.log('📤 Sending payload to backend:', payload);
+      console.log('📤 Payload details:', {
+        mailId: mailId,
+        payloadKeys: Object.keys(payload),
+        statusType: typeof payload.status,
+        alasanType: typeof payload.alasan,
+        alasanLength: payload.alasan ? payload.alasan.length : 0
+      });
       
       // Fixed: Use correct endpoint format POST /api/history/:mailId
       const response = await mailApiClient.post(
         `${API_CONFIG.MAIL_SERVICE.endpoints.updateMailStatus}/${mailId}`,
         payload,
         {
-          timeout: 10000 // 10 second timeout
+          timeout: 10000, // 10 second timeout
+          headers: {
+            'Content-Type': 'application/json'
+          }
         }
       );
       
       console.log('✅ Update status response:', response);
+      console.log('✅ Response data details:', {
+        status: response.status,
+        dataKeys: response.data ? Object.keys(response.data) : [],
+        data: response.data
+      });
       
       if (response.data) {
         // Backend returns: { message, history }
@@ -360,12 +383,20 @@ export const suratApi = {
       }
     } catch (error) {
       console.error('❌ UpdateSuratStatus API Error:', error);
+      console.error('❌ Error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        config: error.config
+      });
       
       let errorMessage = 'Gagal mengubah status surat';
       
       if (error.response) {
         const status = error.response.status;
         const data = error.response.data;
+        
+        console.log('❌ Backend error response:', { status, data });
         
         switch (status) {
           case 400:
